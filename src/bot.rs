@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     env,
     fs::{write, File},
     io::{self, Read},
@@ -15,10 +14,7 @@ use surf::{
     Client, Request, Response, Url,
 };
 
-use crate::{
-    api, convert_date_string_to_local, SlackRError, API_KEY_ENV_NAME, CONFIG_FILE_PATH_ENV_VAR,
-    DEFAULT_CONFIG_PATH, SLACK_API_URL,
-};
+use crate::{API_KEY_ENV_NAME, CONFIG_FILE_PATH_ENV_VAR, DEFAULT_CONFIG_PATH, SLACK_API_URL, SlackRError, api::{self, SlackAPIResultResponse}, convert_date_string_to_local};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BotConfig {
@@ -42,17 +38,7 @@ impl Default for BotConfig {
 impl BotConfig {
     fn new() -> BotConfig {
         info!("Reading config path from {} env var", CONFIG_FILE_PATH_ENV_VAR);
-        let env_value = env::var(CONFIG_FILE_PATH_ENV_VAR);
-        let path = match env_value {
-            Ok(value) => {
-                debug!("Env var {} was set to {}", CONFIG_FILE_PATH_ENV_VAR, value);
-                PathBuf::from(value)
-            }
-            Err(_e) => {
-                debug!("Env var {} was not set, considering default path. {}", CONFIG_FILE_PATH_ENV_VAR, DEFAULT_CONFIG_PATH);
-                PathBuf::from(DEFAULT_CONFIG_PATH)
-            }
-        };
+        let path = Self::get_config_path();
         debug!("Got path");
         match File::open(&path) {
             Ok(file) => {
@@ -78,7 +64,26 @@ impl BotConfig {
             }
         }
     }
-
+    
+    /// Gets the path to save/read the config file from either the environnment variable if set, or Default
+    fn get_config_path() -> PathBuf {
+        match env::var(CONFIG_FILE_PATH_ENV_VAR) {
+            Ok(path_string) => {
+                info!(
+                    "Env var {} set. Using path {}.",
+                    CONFIG_FILE_PATH_ENV_VAR, path_string
+                );
+                PathBuf::from(path_string)
+            }
+            Err(_e) => {
+                info!(
+                    "Env var {} not set. Using default path {}.",
+                    CONFIG_FILE_PATH_ENV_VAR, DEFAULT_CONFIG_PATH
+                );
+                PathBuf::from(DEFAULT_CONFIG_PATH)
+            }
+        }
+    }
     /// Will read a given file handle, expected to contain the config in JSON format, and try to construct the config from it.
     /// Errors will be ignored and simply ignore the file and return the default values, with warnings.
     fn from_file(mut file: File) -> Result<Self, SlackRError> {
@@ -100,9 +105,10 @@ impl BotConfig {
         Ok(config)
     }
 
-    fn to_file(self, path: PathBuf) -> Result<(), SlackRError> {
+    fn to_file(self) -> Result<(), SlackRError> {
+        let path = Self::get_config_path();
         debug!("Writing to path {:?}", path);
-        let json = serde_json::to_string(&self).expect("Couldn't serialize BotConfig");
+        let json = serde_json::to_string_pretty(&self).expect("Couldn't serialize BotConfig");
         debug!("Serialized BotConfig as {}", json);
         write(&path, json.as_bytes()).map_err(|e| {
             error!(
@@ -158,15 +164,40 @@ impl SlackBot {
         debug!("Getting list of members on channel");
         let request = api::ListMembersRequestParams::new(&self.config.channel);
         let remote_members = api::call_endpoint(api::ListMembersEndpoint, &request, &self.client).await;
-        // let member = self.config.members.choose(&mut rng)
-        //     .ok_or_else(|| { error!("No member to pick from."); SlackRError})?
-        //     .to_owned();
-        let member = remote_members
-            .members
-            .choose(&mut rng)
-            .expect("No Member to pick from.");
-        info!("Member picked randomly: {}", member);
-        Ok(member.clone())
+        match remote_members {
+            SlackAPIResultResponse::Ok(remote_members) => {
+                let member = remote_members.members.choose(&mut rng).expect("No Member to pick from.");
+                info!("Member picked randomly: {}", member);
+                Ok(member.clone())
+            }
+            SlackAPIResultResponse::Err(e) => {
+                Err(SlackRError)
+            } 
+        }
+    }
+
+    /// Takes a user email as input, and fetches its ID and adds its ID to the config members (with confirmation for matching user)
+    pub async fn add_member_id_from_email(mut self, email: &str) {
+        info!("Processing add member command");
+        let request = api::UserLookupRequest{ email: email.to_string() };
+        let member_object = api::call_endpoint(api::UserLookupByEmailEndpoint, &request, &self.client).await;
+        match member_object {
+            SlackAPIResultResponse::Ok(response) => {
+                let name = response.user.profile.display_name.or(Some(response.user.name)).unwrap();
+                println!("Found user {}. Is it who you want, save its ID {} in config? Y/n", name, response.user.id);
+                if yes_no_input() {
+                    self.config.members.push(response.user.id);
+                    self.config.to_file();
+                }
+            },
+            SlackAPIResultResponse::Err(slack_err) => {
+                match slack_err.error {
+                    api::SlackApiError::users_not_found => error!("User email was not found, or the bot doesn't have access to it."),
+                    api::SlackApiError::missing_scope => error!("Usage of lookup by email requires the Slack `users:read.email` scope. Please verify bot permissions."),
+                    _ => error!("{:?}", slack_err.error)
+                };
+            }
+        };
     }
 
     pub async fn joke(self, input_date_arg: Option<&str>) {
@@ -181,12 +212,7 @@ impl SlackBot {
             }
             None => {
                 debug!("No date was input. Calculating next business day");
-                today
-                    .date()
-                    .succ()
-                    .and_time(today.time())
-                    .expect("Somehow this time cannot exist")
-                // target
+                today.date().succ().and_time(today.time()).expect("Tomorrow may not exist. That's dark man.")
             }
         };
 
@@ -224,22 +250,6 @@ impl SlackBot {
         target_time_opt: Option<&str>,
     ) {
         info!("Processing config command");
-        let path = match env::var(CONFIG_FILE_PATH_ENV_VAR) {
-            Ok(path_string) => {
-                info!(
-                    "Env var {} set. Writing to path {}.",
-                    CONFIG_FILE_PATH_ENV_VAR, path_string
-                );
-                PathBuf::from(path_string)
-            }
-            Err(_e) => {
-                info!(
-                    "Env var {} not set. Writing to default path {}.",
-                    CONFIG_FILE_PATH_ENV_VAR, DEFAULT_CONFIG_PATH
-                );
-                PathBuf::from(DEFAULT_CONFIG_PATH)
-            }
-        };
         let mut build_config = self.config;
         debug!("Parsing given config arguments");
         if let Some(members) = members_opt { info!("Member: {:?}", members); build_config.members = members };
@@ -251,15 +261,10 @@ impl SlackBot {
                 .expect("Unable to parse time again");
         };
         println!("{:?}", build_config);
+        let path = BotConfig::get_config_path();
         println!("Save to file at {:?}? y/n", path);
-        let mut buff = String::new();
-        match std::io::stdin().read_line(&mut buff) {
-            Ok(_bytes) => {
-                if buff.to_ascii_lowercase().trim() == "y".to_string() {
-                    build_config.to_file(path).expect("Couldn't write the file");
-                }
-            }
-            Err(err) => debug!("Failed getting stdin. {}", err),
+        if yes_no_input() {
+            build_config.to_file();
         }
     }
 
@@ -295,5 +300,17 @@ impl Middleware for HeadersMiddleware {
         req.insert_header(surf::http::headers::CONTENT_TYPE, surf::http::mime::JSON);
         let res = next.run(req, client).await?;
         Ok(res)
+    }
+}
+
+fn yes_no_input() -> bool {
+    let mut buff = String::new();
+    match std::io::stdin().read_line(&mut buff) {
+        Ok(_bytes) => {
+            if buff.to_ascii_lowercase().trim() == "y".to_string() {
+                true
+            } else { false }
+        }
+        Err(err) => { false },
     }
 }

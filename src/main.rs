@@ -33,7 +33,21 @@ fn main() {
             .long("list")
             .takes_value(false)
             .help("Lists the scheduled messages")
-    );
+        );
+
+    let add_member_command = SubCommand::with_name("member")
+        .about("Adds a member ID to config, taking email as input to lookup Slack ID.")
+        .arg(Arg::with_name("email")
+            .required(true)
+            .short("e")
+            .long("email")
+            .takes_value(true)
+            .validator(validate_email)
+            .help("Input the Slack's registered email of the user to add in config.")
+        );
+    let add_command = SubCommand::with_name("add")
+        .about("Adds various data to config, possibly fetching data from Slack")
+        .subcommand(add_member_command);
 
     let config_long_about = format!("Configuration is saved to a local file, defaulting to {} in the current folder, 
         the path and filename of which can be configured with the {} environnment variable.\n
@@ -76,7 +90,9 @@ fn main() {
             .help("Sets the level of verbosity, the more \"v\" the more verbose, up to -vvv.")
         )
         .subcommand(joke_command)
-        .subcommand(config_command);
+        .subcommand(config_command)
+        .subcommand(add_command);
+    // CLI defined,
     let matches = app.get_matches();
 
     let log_level = match matches.occurrences_of("v") {
@@ -102,6 +118,17 @@ fn main() {
             debug!("Joke subcommand");
             let input_date_arg = args.value_of("day");
             task::block_on(bot.joke(input_date_arg));
+        },
+        ("add", Some(args)) => {
+            match args.subcommand() {
+                ("member", Some(member_args)) => {
+                    debug!("Add Member subcommand");
+                    let email = member_args.value_of("email").unwrap();
+                    task::block_on(bot.add_member_id_from_email(email));
+
+                }
+                _ => panic!("Can only add members yet!"),
+            }
         },
         ("config", Some(args)) => {
             debug!("Config subcommand");
@@ -157,4 +184,14 @@ fn validate_time_input(input_time: String) -> Result<(), String> {
         Ok(_v) => Ok(()),
         Err(e) => Err(format!("{}", e)),
     }
+}
+
+
+fn validate_email(input_email: String) -> Result<(), String> {
+    // Very naive email validation. 
+    let email_split: Vec<&str> = input_email.split("@").collect();
+    if email_split.len() <= 1 { return Err("Not an email".to_string()) }
+    let domain_split: Vec<&str> = email_split[1].split(".").collect();
+    if domain_split.len() <= 1 { return Err("Not an email".to_string()) }
+    Ok(())
 }
