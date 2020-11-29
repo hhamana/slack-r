@@ -27,40 +27,73 @@ fn main() {
             .multiple(true)
             .validator(validate_date_input)
             .help("Select a specific day. Format as YYYY-MM-DD. Only dates in the future are allowed.")
-        )
-        .arg(Arg::with_name("list")
-            .short("ls")
-            .long("list")
-            .takes_value(false)
-            .help("Lists the scheduled messages")
         );
 
     let add_member_command = SubCommand::with_name("member")
         .about("Adds a member ID to config, taking email as input to lookup Slack ID.")
         .arg(Arg::with_name("email")
             .required(true)
-            .short("e")
-            .long("email")
             .takes_value(true)
             .validator(validate_email)
-            .help("Input the Slack's registered email of the user to add in config.")
+            .help("Input the Slack's registered email of the user to add in config. The bot must have `users:read.email` permission")
         );
+
+    let add_token_command = SubCommand::with_name("token")
+        .about("Adds a Slack API token to the config.")
+        .arg(Arg::with_name("token")
+            .required(true)
+            .takes_value(true)
+            .help("Saves the input token to config, so it doesn't need to eb set as environnment variable. A new token must be acquired form Slack, and will represent the bot's authentication and permissions")
+        );
+
+    let add_channel_command = SubCommand::with_name("channel")
+        .about("Sets the channel to where the bot will post, and adds all the channels's users in config. Only one channel is allowed per configuration file, so any previously set channel will be overwitten. The bot will join the channel if not already in.")
+        .arg(Arg::with_name("channel")
+            .required(true)
+            // .short("c")
+            // .long("channel")
+            .takes_value(true)
+            .help("Specifies the channel to add")
+        );
+
+    let add_times_command = SubCommand::with_name("time")
+        .about("Sets the target time and/or scheduling offset. By default, target time is set at 11:30 locally, with an offset of 23 hours.")
+        .long_about(" This way, when the joke is invoked for the day 2020-12-01, it is calculated to be at 11:15, and schedule to post the message 23 hours before the target time. 
+        The joke coimmand will abort operation if the current time is past the time to schedule.")
+        .arg(Arg::with_name("target")
+            .long("target")
+            .takes_value(true)
+            .help("Set the target time, which will be added to process the input date.")
+        )
+        .arg(Arg::with_name("offset")
+            .long("offset")
+            .takes_value(true)
+            .help("Set the offset to apply for the target time.")
+        );
+
     let add_command = SubCommand::with_name("add")
         .about("Adds various data to config, possibly fetching data from Slack")
-        .subcommand(add_member_command);
+        .subcommand(add_member_command)
+        .subcommand(add_token_command)
+        .subcommand(add_channel_command)
+        .subcommand(add_times_command);
+        
+    let scheduled_command = SubCommand::with_name("scheduled")
+        .about("Prints all scheduled messages for the bot.");
 
     let config_long_about = format!("Configuration is saved to a local file, defaulting to {} in the current folder, 
         the path and filename of which can be configured with the {} environnment variable.\n
         The values can be configured from the CLI (see OPTIONS), or directly manually from the file as json format.\n
         The command will read the data content, updated with the values and offer to save the file.", DEFAULT_CONFIG_PATH, CONFIG_FILE_PATH_ENV_VAR);
     let config_command = SubCommand::with_name("config")
-        .about("Configures the bot")
+        .about("Configures the bot in bulk isntead of using separate adds")
         .long_about(config_long_about.as_str())
         .arg(Arg::with_name("members")
             .short("m")
             .long("members")
             .takes_value(true)
             .multiple(true)
+            .validator(validate_email)
             .help("Adds a list of members"),
         )
         .arg(Arg::with_name("channel")
@@ -91,7 +124,8 @@ fn main() {
         )
         .subcommand(joke_command)
         .subcommand(config_command)
-        .subcommand(add_command);
+        .subcommand(add_command)
+        .subcommand(scheduled_command);
     // CLI defined,
     let matches = app.get_matches();
 
@@ -107,9 +141,9 @@ fn main() {
 
     //  will panick if you don't have the key as env var at this point.
     info!("Initializing bot");
-    let config_command = matches.is_present("config");
-    debug!("Config command? {}", config_command);
-    let bot = SlackBot::new(config_command);
+    let should_panic = matches.is_present("config") || matches.is_present("add");
+    debug!("No panic? {}", should_panic);
+    let mut bot = SlackBot::new(should_panic);
     info!("Bot initialized");
 
     debug!("Dispatching");
@@ -119,16 +153,41 @@ fn main() {
             let input_date_arg = args.value_of("day");
             task::block_on(bot.joke(input_date_arg));
         },
+        ("scheduled", _) => {
+            debug!("Scheduled subcommand");
+            task::block_on(bot.check_scheduled_messages());
+        },
         ("add", Some(args)) => {
             match args.subcommand() {
                 ("member", Some(member_args)) => {
                     debug!("Add Member subcommand");
                     let email = member_args.value_of("email").unwrap();
-                    task::block_on(bot.add_member_id_from_email(email));
-
+                    task::block_on(bot.add_member_from_email(email));
+                },
+                ("token", Some(token_args)) => {
+                    debug!("Add Token subcommand");
+                    let token = token_args.value_of("token").unwrap();
+                    bot.add_token(token);
+                },
+                ("channel", Some(channel_args)) => {
+                    debug!("Add Channel subcommand");
+                    let channel = channel_args.value_of("channel").unwrap();
+                    task::block_on(bot.add_channel(channel));
+                },
+                ("time", Some(times_args)) => {
+                    debug!("Add times subcommand");
+                    let target_time_opt = times_args.value_of("target");
+                    if let Some(target_time) = target_time_opt {
+                        bot.add_target_time(target_time);
+                    }
+                    let offset_opt = times_args.value_of("target");
+                    if let Some(offset) = offset_opt {
+                        bot.add_offset_time(offset);
+                    }
                 }
-                _ => panic!("Can only add members yet!"),
+                _ => panic!("Can only add channel, token or individual members! See `slack-r help add`"),
             }
+            bot.save();
         },
         ("config", Some(args)) => {
             debug!("Config subcommand");
@@ -147,7 +206,7 @@ fn main() {
 }
 
 #[derive(Debug)]
-struct SlackRError;
+pub struct SlackRError;
 
 /// Takes a date string such as "2020-10-21" and returns a Datetime instance with local timezone and current time.
 /// Returns a String as error, so it can be used to validate while invoking as command line argument too

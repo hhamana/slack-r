@@ -61,7 +61,7 @@ pub enum SlackApiError {
     /// The channel passed is invalid
     invalid_channel, 
 
-    /// Value passed for channel was invalid.
+    /// Value passed for channel was not found
     channel_not_found,
     
     /// Value passed for user was invalid.
@@ -240,7 +240,7 @@ pub struct ScheduleMessageResponseRaw {
 
 #[derive(Serialize, Deserialize)]
 pub struct MessageResponse {
-    text: String,
+    pub text: String,
     username: String,
     bot_id: String,
     attachments: Vec<Attachments>,
@@ -268,10 +268,10 @@ impl std::error::Error for ParseIntStringError {}
 #[derive(Serialize, Deserialize)]
 pub struct ScheduleMessageResponse {
     ok: bool,
-    channel: String,
-    scheduled_message_id: String,
-    post_at: DateTime<Utc>,
-    message: MessageResponse,
+    pub channel: String,
+    pub scheduled_message_id: String,
+    pub post_at: DateTime<Utc>,
+    pub message: MessageResponse,
 }
 
 impl From<ScheduleMessageResponseRaw> for ScheduleMessageResponse {
@@ -397,6 +397,30 @@ impl SlackEndpoint for ListMembersEndpoint {
     }
 }
 
+pub async fn list_members_for_channel(client: &Client, channel: &String) -> Result<Vec<String>, SlackApiError> {
+    let mut members = Vec::new();
+    let mut request = ListMembersRequestParams {channel: channel.clone(), cursor: None};
+    loop {
+        let response_res = call_endpoint(ListMembersEndpoint, &request, client).await;
+        match response_res {
+            SlackAPIResultResponse::Ok(response) => {
+                members.extend(response.members);
+                if let Some(next_cursor) = response.response_metadata.next_cursor {
+                    if !next_cursor.is_empty() {
+                        request.cursor = Some(next_cursor)
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                };
+            },
+            SlackAPIResultResponse::Err(err) => return Err(err.error)
+        }
+    };
+    Ok(members)
+}
+
 #[derive(Debug)]
 struct ListScheduledMessagesEndpoint;
 impl SlackEndpoint for ListScheduledMessagesEndpoint {
@@ -410,8 +434,8 @@ impl SlackEndpoint for ListScheduledMessagesEndpoint {
     }
 }
 
-pub async fn list_scheduled_messages(client: &Client) -> Vec<ScheduledMessageObject> {
-    let mut request = ScheduledMessagesListRequest::default();
+pub async fn list_scheduled_messages(client: &Client, channel: &str) -> Vec<ScheduledMessageObject> {
+    let mut request = ScheduledMessagesListRequest { channel: Some(channel.to_string()), ..ScheduledMessagesListRequest::default()};
     let mut all_responses = Vec::new();
 
     loop {
@@ -521,19 +545,85 @@ pub struct ListMembersRequestParams {
     // limit: Option<u64>
 }
 
-impl ListMembersRequestParams {
-    pub fn new(channel: &str) -> ListMembersRequestParams {
-        ListMembersRequestParams {
-            channel: channel.to_string(),
-            cursor: None,
-            // limit: None
-        }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListMembersResponse {
+    ok: bool,
+    // List OF IDs
+    pub members: Vec<String>,
+    response_metadata: Pagination,
+}
+
+//** Join Conversation Endpoint
+#[derive(Debug)]
+pub struct JoinConversationEndpoint;
+impl SlackEndpoint for JoinConversationEndpoint {
+    type Response = JoinConversationResponse;
+    type Request = JoinConversationRequest;
+    fn method(&self) -> HttpVerb {
+        HttpVerb::POST
+    }
+
+    fn endpoint_url(&self) -> &str {
+        "conversations.join"
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ListMembersResponse {
+pub struct JoinConversationRequest {
+    pub channel: String
+}
+
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JoinConversationResponse {
     ok: bool,
-    pub members: Vec<String>,
-    response_metadata: Pagination,
+    pub channel: ChannelObject,
+    pub warning: Option<String>,
+    response_metadata: Option<Warnings>
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Warnings {
+    warnings: Vec<String>
+}
+
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChannelObject {
+    id: String,
+    name: String,
+    is_channel: bool,
+    is_group: bool,
+    is_im: bool,
+    created: i64,
+    creator: String,
+    is_archived: bool, 
+    is_general: bool, 
+    unlinked: i64,
+    name_normalized: String, 
+    is_shared: bool, 
+    is_ext_shared: bool, 
+    is_org_shared: bool, 
+    pending_shared: Vec<String>,
+    is_pending_ext_shared: bool, 
+    is_member: bool, 
+    is_private: bool, 
+    is_mpim: bool, 
+    topic: ChannelTopic,
+    purpose: ChannelPurpose,
+    previous_names: Vec<String>
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChannelTopic {
+    value: String,
+    creator: String,
+    last_set: i64
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChannelPurpose {
+value: String,
+creator: String,
+last_set: i64,
 }
