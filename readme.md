@@ -28,5 +28,5 @@ Can also be defined in the config file. Env variable will take priority over con
 To use `add channel <channel>` a channel, the bot needs the `channels:join` scope permsssion. This allows to get all the channels's members ID necessarry to effectively mention/notify them when selected.
 To use `add member <email>`, the bot neds to have `users:read.email` scope permission. This is optional, as long as you don't use it. The `add channel` will add add members in a batch so you probably don't need to cherry pick users.
 
-# Technbology
+# Technology
 Proudly built in Rust, with async.
