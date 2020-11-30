@@ -411,7 +411,7 @@ impl Middleware for HeadersMiddleware {
             surf::http::headers::AUTHORIZATION,
             format!("Bearer {}", self.token),
         );
-        req.insert_header(surf::http::headers::CONTENT_TYPE, surf::http::mime::JSON);
+        req.insert_header(surf::http::headers::CONTENT_TYPE, format!("{}; charset=utf-8", surf::http::mime::JSON));
         let res = next.run(req, client).await?;
         Ok(res)
     }

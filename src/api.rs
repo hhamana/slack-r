@@ -30,7 +30,8 @@ pub async fn call_endpoint<E: SlackEndpoint>(
     debug!("JSON request {}", data);
     let request = match endpoint.method() {
         HttpVerb::POST => client.post(endpoint.endpoint_url()).body(data),
-        HttpVerb::GET => client.get(endpoint.endpoint_url()).query(&data).unwrap().header(surf::http::headers::CONTENT_TYPE, surf::http::mime::FORM),
+        HttpVerb::GET => client.get(endpoint.endpoint_url()).query(&data).unwrap()
+            .header(surf::http::headers::CONTENT_TYPE, format!("{}; charset=utf-8", surf::http::mime::FORM)),
     };
     // let response: E::Response = request.recv_json().await.unwrap();
     let raw = request.recv_string().await.unwrap();
@@ -493,12 +494,14 @@ impl Default for ScheduledMessagesListRequest {
 pub struct ScheduledMessagesListRaw {
     ok: bool,
     scheduled_messages: Vec<ScheduledMessageObjectRaw>,
+    warning: Option<String>,
     response_metadata: Pagination,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Pagination {
     next_cursor: Option<String>,
+    warnings: Option<Vec<String>>
 }
 
 #[derive(Debug, Serialize, Deserialize)]
