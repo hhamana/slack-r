@@ -218,7 +218,7 @@ impl SlackBot {
             return;
         }
         
-        debug!("Checking it isn'already scheduled for channel...");
+        debug!("Checking it isn't already scheduled for channel...");
         if self.date_already_been_scheduled(schedule_date, &self.config.channel).await {
             error!("This date has already been scheduled. Check with `scheduled` command");
             return;
@@ -389,6 +389,7 @@ impl SlackBot {
 
     async fn date_already_been_scheduled(&self, date: DateTime<Local>, channel: &str) -> bool {
         let messages = api::list_scheduled_messages(&self.client, channel).await;
+        if messages.is_empty() { return false };
         messages.iter().all(|mess| mess.date() == date.date())
     }
 

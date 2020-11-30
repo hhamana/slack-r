@@ -30,10 +30,12 @@ pub async fn call_endpoint<E: SlackEndpoint>(
     debug!("JSON request {}", data);
     let request = match endpoint.method() {
         HttpVerb::POST => client.post(endpoint.endpoint_url()).body(data),
-        HttpVerb::GET => client.get(endpoint.endpoint_url()).query(&data).unwrap(),
+        HttpVerb::GET => client.get(endpoint.endpoint_url()).query(&data).unwrap().header(surf::http::headers::CONTENT_TYPE, surf::http::mime::FORM),
     };
     // let response: E::Response = request.recv_json().await.unwrap();
-    let response: SlackAPIResultResponse<E::Response> = request.recv_json().await.unwrap();
+    let raw = request.recv_string().await.unwrap();
+    debug!("Raw response {}", raw);
+    let response: SlackAPIResultResponse<E::Response> = serde_json::from_str(&raw).unwrap();
     match &response {
         SlackAPIResultResponse::Ok(_ok) =>  info!("Got Slack response successfully"),
         SlackAPIResultResponse::Err(e) =>  error!("Slack responded with an error on the request for {}: {:?}", endpoint.endpoint_url(), e.error),
@@ -111,6 +113,9 @@ pub enum SlackApiError {
     /// The method has been deprecated.
     method_deprecated,
 
+    /// Method used wasn't recognized
+    unknown_method,
+
     /// The endpoint has been deprecated.
     deprecated_endpoint,
 
@@ -166,7 +171,9 @@ pub enum SlackApiError {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SlackApiErrorResponse {
     ok: bool,
-    pub error: SlackApiError
+    pub error: SlackApiError,
+    warnings: Option<String>,
+    response_metadata: Option<serde_json::Value>
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -195,7 +202,7 @@ impl SlackEndpoint for ScheduleMessageEndpoint {
     type Response = ScheduleMessageResponseRaw;
 
     fn endpoint_url(&self) -> &str { 
-        "chat.ScheduleMessage" 
+        "chat.scheduleMessage"
     }
     fn method(&self) -> HttpVerb { 
         HttpVerb::POST
@@ -466,18 +473,18 @@ pub async fn list_scheduled_messages(client: &Client, channel: &str) -> Vec<Sche
 pub struct ScheduledMessagesListRequest {
     channel: Option<String>,
     cursor: Option<String>,
-    latest: Option<i64>,
-    limit: Option<u64>,
-    oldest: Option<i64>,
+    // latest: Option<i64>,
+    // limit: Option<u64>,
+    // oldest: Option<i64>,
 }
 impl Default for ScheduledMessagesListRequest {
     fn default() -> Self {
         ScheduledMessagesListRequest {
             channel: None,
             cursor: None,
-            latest: None,
-            limit: None,
-            oldest: None,
+            // latest: None,
+            // limit: None,
+            // oldest: None,
         }
     }
 }
