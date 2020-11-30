@@ -46,15 +46,6 @@ pub async fn call_endpoint<E: SlackEndpoint>(
     response
 }
 
-fn string_epoch_to_datetime(input_string: String) -> Result<DateTime<Utc>, ParseIntStringError> {
-    let epoch = input_string
-        .parse::<i64>()
-        .map_err(|_| ParseIntStringError)?;
-    let datetime = Utc.timestamp(epoch, 0);
-    Ok(datetime)
-}
-
-
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(non_camel_case_types)]
 pub enum SlackApiError {
@@ -242,25 +233,42 @@ pub struct ScheduleMessageResponseRaw {
     ok: bool,
     channel: String,
     scheduled_message_id: String,
-    post_at: String,
+    post_at: i64,
     message: MessageResponse,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct MessageResponse {
     pub text: String,
-    username: String,
+    user: String,
+    team: String,
     bot_id: String,
-    attachments: Vec<Attachments>,
     #[serde(rename = "type")]
     type_: String,
-    subtype: String,
+    bot_profile: Option<BotProfile>,
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct BotProfile {
+    id: String, 
+    deleted: bool,
+    name: String, 
+    updated: i64,
+    app_id: String,
+    icons: Icons,
+    team_id: String
+}
+
+#[derive(Serialize, Deserialize)]
+struct Icons {
+    image_36: Option<String>,
+    image_48: String,
+    image_72: String
+}
+#[derive(Serialize, Deserialize)]
 pub struct Attachments {
     text: String,
-    id: u64,
+    id: String,
     fallback: String,
 }
 
@@ -288,7 +296,7 @@ impl From<ScheduleMessageResponseRaw> for ScheduleMessageResponse {
             ok: mess.ok,
             channel: mess.channel,
             scheduled_message_id: mess.scheduled_message_id,
-            post_at: string_epoch_to_datetime(mess.post_at).unwrap(),
+            post_at: Utc.timestamp(mess.post_at, 0),
             message: mess.message,
         }
     }
@@ -494,19 +502,17 @@ impl Default for ScheduledMessagesListRequest {
 pub struct ScheduledMessagesListRaw {
     ok: bool,
     scheduled_messages: Vec<ScheduledMessageObjectRaw>,
-    warning: Option<String>,
     response_metadata: Pagination,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Pagination {
     next_cursor: Option<String>,
-    warnings: Option<Vec<String>>
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScheduledMessageObjectRaw {
-    id: u64,
+    id: String,
     channel_id: String,
     post_at: i64,
     date_created: i64,
@@ -515,7 +521,7 @@ pub struct ScheduledMessageObjectRaw {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScheduledMessageObject {
-    id: u64,
+    id: String,
     channel_id: String,
     post_at: DateTime<Utc>,
     date_created: DateTime<Utc>,
@@ -535,7 +541,7 @@ impl std::fmt::Display for ScheduledMessageObject {
 impl From<&ScheduledMessageObjectRaw> for ScheduledMessageObject {
     fn from(raw: &ScheduledMessageObjectRaw) -> Self {
         ScheduledMessageObject {
-            id: raw.id,
+            id: raw.id.clone(),
             channel_id: raw.channel_id.clone(),
             post_at: Utc.timestamp(raw.post_at, 0),
             date_created: Utc.timestamp(raw.date_created, 0),

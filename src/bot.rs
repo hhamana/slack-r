@@ -206,7 +206,7 @@ impl SlackBot {
             match unfiltered.date().weekday() {
                 Weekday::Sun => {
                     debug!("Joke for a monday, scheduled to sunday, shifting to friday before");
-                    unfiltered - Duration::days(3)
+                    unfiltered - Duration::days(2)
                 },
                 _ => unfiltered
             }
