@@ -174,7 +174,7 @@ impl<T> SlackApiResponse<T> {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResponseMetadata {
-    pagination: Option<Pagination>,
+    next_cursor: Option<String>,
     warnings: Option<Vec<SlackApiWarning>>
 }
 //** Concrete implementations  **
@@ -395,9 +395,9 @@ pub async fn list_members_for_channel(client: &Client, channel: &String) -> Resu
             SlackApiContent::Ok(response) => {
                 members.extend(response.members);
                 if let Some(metadata) = full_response.response_metadata {
-                    if let Some(pag) = metadata.pagination {
-                        if !pag.next_cursor.is_empty() {
-                            request.cursor = Some(pag.next_cursor);
+                    if let Some(next_cursor) = metadata.next_cursor {
+                        if !next_cursor.is_empty() {
+                            request.cursor = Some(next_cursor);
                         } else {
                             break;
                         }
@@ -440,9 +440,9 @@ pub async fn list_scheduled_messages(client: &Client, channel: &str) -> Vec<Sche
                 all_responses.extend(page_objects_iterator);
                 debug!("Added to total, {} items", all_responses.len());
                 if let Some(metadata) = full_response.response_metadata {
-                    if let Some(pag) = metadata.pagination {
-                        if !pag.next_cursor.is_empty() {
-                            request.cursor = Some(pag.next_cursor);
+                    if let Some(next_cursor) = metadata.next_cursor {
+                        if !next_cursor.is_empty() {
+                            request.cursor = Some(next_cursor);
                         } else {
                             break;
                         }
@@ -486,12 +486,6 @@ impl Default for ScheduledMessagesListRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScheduledMessagesListRaw {
     scheduled_messages: Vec<ScheduledMessageObjectRaw>,
-    // response_metadata: Pagination,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Pagination {
-    next_cursor: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
