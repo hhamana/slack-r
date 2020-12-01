@@ -47,124 +47,95 @@ pub async fn call_endpoint<E: SlackEndpoint>(
 
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(non_camel_case_types)]
+#[non_exhaustive]
 pub enum SlackApiError {
     ///Invalid user id provided
     invalid_user_id,
-    
     /// The channel passed is invalid
     invalid_channel, 
-
     /// Value passed for channel was not found
     channel_not_found,
-    
     /// Value passed for user was invalid.
     users_not_found,
-
     ///No authentication token provided.
     not_authed,
-
     /// Some aspect of authentication cannot be validated. Either the provided token is invalid or the request originates from an IP address disallowed from making the request.
     invalid_auth,
-
     /// This type of conversation cannot be used with this method.
     method_not_supported_for_channel_type,
-
     ///The token used is not granted the specific scope permissions required to complete this request.
     missing_scope,
-
     /// Authentication token is for a deleted user or workspace.
     account_inactive,
     ///Authentication token is for a deleted user or workspace or the app has been removed.
     token_revoked,
-
     /// The workspace token used in this request does not have the permissions necessary to complete the request. Make sure your app is a member of the conversation it's attempting to post a message to.
     no_permission,
-
     ///The workspace is undergoing an enterprise migration and will not be available until migration is complete.
     org_login_required,
-
     ///Administrators have suspended the ability to post a message.
     ekm_access_denied,
-
     /// The method cannot be called from an Enterprise.
     enterprise_is_restricted,
-
     /// Value passed for limit was invalid.
     invalid_limit,
-
     ///The token type used in this request is not allowed.
     not_allowed_token_type,
-
     /// Value passed for cursor was invalid.
     invalid_cursor, 
-
     /// Failed to fetch members for the conversation.
     fetch_members_failed,
-
     /// The method has been deprecated.
     method_deprecated,
-
     /// Method used wasn't recognized
     unknown_method,
-
     /// The endpoint has been deprecated.
     deprecated_endpoint,
-
     /// Two factor setup is required.
     two_factor_setup_required,
-
     /// This method cannot be called by a bot user.
     is_bot,
-
     /// The method was either called with invalid arguments or some detail about the arguments passed are invalid, which is more likely when using complex arguments like blocks or attachments.
     invalid_arguments,
-
     /// The method was passed an argument whose name falls outside the bounds of accepted or expected values. This includes very long names and names with non-alphanumeric characters other than _. If you get this error, it is typically an indication that you have made a very malformed API call.
     invalid_arg_name,
-
     /// The method was passed an array as an argument. Please only input valid strings.
     invalid_array_arg,
-    
     /// The method was called via a POST request, but the charset specified in the Content-Type header was invalid. Valid charset names are: utf-8 iso-8859-1.
     invalid_charset,
-
     /// The method was called via a POST request with Content-Type application/x-www-form-urlencoded or multipart/form-data, but the form data was either missing or syntactically invalid.
     invalid_form_data,
-
     /// The method was called via a POST request, but the specified Content-Type was invalid. Valid types are: application/json application/x-www-form-urlencoded multipart/form-data text/plain.
     invalid_post_type,
-
     ///The method was called via a POST request and included a data payload, but the request did not include a Content-Type header.
     missing_post_type,
-
     /// The workspace associated with your request is currently undergoing migration to an Enterprise Organization. Web API and other platform operations will be intermittently unavailable until the transition is complete.
     team_added_to_org,
-
     /// The request has been ratelimited. Refer to the Retry-After header for when to retry the request.
     ratelimited,
-
     /// Access to this method is limited on the current network
     accesslimited,
-
     /// The method was called via a POST request, but the POST data was either missing or truncated.
     request_timeout,
-
     /// The service is temporarily unavailable
     service_unavailable,
-
     /// The server could not complete your operation(s) without encountering a catastrophic error. It's possible some aspect of the operation succeeded before the error was raised.
     fatal_error,
-
     /// Complete Slack API failure
+
     internal_error,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(non_camel_case_types)]
+#[non_exhaustive]
 pub enum SlackApiWarning {
     missing_charset,
     already_in_channel,
+    message_truncated,
+    superfluous_charset
 }
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SlackApiErrorResponse {
     pub error: SlackApiError,
@@ -261,12 +232,14 @@ pub struct ScheduleMessageResponseRaw {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MessageResponse {
     pub text: String,
+    #[serde(alias = "username")]
     user: String,
-    team: String,
-    bot_id: String,
+    team: Option<String>,
+    bot_id: Option<String>,
     #[serde(rename = "type")]
     type_: String,
     bot_profile: Option<BotProfile>,
+    attachements: Option<Vec<Attachments>>
 }
 
 #[derive(Debug, Serialize, Deserialize)]
