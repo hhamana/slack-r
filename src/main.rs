@@ -14,10 +14,10 @@ const BOT_NAME: &'static str = "Slack-R";
 const CLI_VERSION: &'static str = "0.1";
 const CONFIG_FILE_PATH_ENV_VAR: &'static str = "SLACK_R_CONFIG_FILE_PATH";
 const DEFAULT_CONFIG_PATH: &'static str = "./config.json";
-// #[cfg(profile = "release")]
+#[cfg(not(debug_assertions))]
 const SLACK_API_URL: &'static str = "https://slack.com/api/";
-// #[cfg(profile = "debug")]
-// const SLACK_API_URL: &'static str = "http://localhost:3030";
+#[cfg(debug_assertions)]
+const SLACK_API_URL: &'static str = "http://localhost:3030";
 
 /// Entry point and define command line interface.
 fn main() {

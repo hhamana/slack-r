@@ -14,7 +14,11 @@ use surf::{
     Client, Request, Response, Url,
 };
 
-use crate::{API_KEY_ENV_NAME, CONFIG_FILE_PATH_ENV_VAR, DEFAULT_CONFIG_PATH, SLACK_API_URL, SlackRError, api::{self, SlackAPIResultResponse, SlackApiError}, convert_date_string_to_local};
+use crate::{
+    API_KEY_ENV_NAME, CONFIG_FILE_PATH_ENV_VAR, DEFAULT_CONFIG_PATH, SLACK_API_URL, SlackRError, 
+    api::{self, SlackApiContent, SlackApiError, SlackApiWarning}, 
+    convert_date_string_to_local
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BotConfig {
@@ -306,16 +310,16 @@ impl SlackBot {
     pub async fn add_member_from_email(&mut self, email: &str) {
         info!("Processing add member command");
         let request = api::UserLookupRequest{ email: email.to_string() };
-        let member_object = api::call_endpoint(api::UserLookupByEmailEndpoint, &request, &self.client).await;
-        match member_object {
-            SlackAPIResultResponse::Ok(response) => {
+        let response = api::call_endpoint(api::UserLookupByEmailEndpoint, &request, &self.client).await;
+        match response.content {
+            SlackApiContent::Ok(response) => {
                 let name = response.user.profile.display_name.or(Some(response.user.name)).unwrap();
                 println!("Found user {}. Is it who you want, save its ID {} in config? y/n", name, response.user.id);
                 if yes_no_input() {
                     self.config.members.push(response.user.id);
                 }
             },
-            SlackAPIResultResponse::Err(slack_err) => {
+            SlackApiContent::Err(slack_err) => {
                 match slack_err.error {
                     api::SlackApiError::users_not_found => error!("User email was not found, or the bot doesn't have access to it."),
                     api::SlackApiError::missing_scope => error!("Usage of lookup by email requires the Slack `users:read.email` scope. Please verify bot permissions."),
@@ -335,15 +339,14 @@ impl SlackBot {
 
         let request = api::JoinConversationRequest { channel: channel.clone() };
         let join_channel_response = api::call_endpoint(api::JoinConversationEndpoint, &request, &self.client).await;
-        match join_channel_response {
-            SlackAPIResultResponse::Ok(response) => {
-                if response.warning == Some("already_in_channel".to_string()) {
-                    warn!("Was already in channel.");
-                } else {
-                    info!("Successfully joined channel.");
+        match join_channel_response.content {
+            SlackApiContent::Ok(response) => {
+                match join_channel_response.warning {
+                    Some(SlackApiWarning::already_in_channel) => warn!("Was already in channel {}.", response.channel.name),
+                    _=> info!("Successfully joined channel {}", response.channel.name)
                 }
             },
-            SlackAPIResultResponse::Err(err) => {
+            SlackApiContent::Err(err) => {
                 error!("Couldn't join channel. Error: {:?}. Aborting.", err.error);
                 return;
             }

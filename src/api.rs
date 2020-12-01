@@ -1,4 +1,4 @@
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc, Local};
 use log::{debug, error, info};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use surf::Client;
@@ -13,7 +13,7 @@ pub enum HttpVerb {
 
 pub trait SlackEndpoint where Self: std::fmt::Debug {
     type Request: Serialize;
-    type Response: Serialize + DeserializeOwned;
+    type Response: Serialize + DeserializeOwned + std::fmt::Debug;
 
     fn endpoint_url(&self) -> &str;
     fn method(&self) -> HttpVerb;
@@ -23,7 +23,7 @@ pub async fn call_endpoint<E: SlackEndpoint>(
     endpoint: E,
     request: &E::Request,
     client: &surf::Client,
-) -> SlackAPIResultResponse<E::Response>  {
+) -> SlackApiResponse<E::Response> {
 // ) -> E::Response  {
     info!("Calling {:?}", endpoint);
     let data = serde_json::to_value(request).unwrap();
@@ -33,15 +33,14 @@ pub async fn call_endpoint<E: SlackEndpoint>(
         HttpVerb::GET => client.get(endpoint.endpoint_url()).query(&data).unwrap()
             .header(surf::http::headers::CONTENT_TYPE, format!("{}; charset=utf-8", surf::http::mime::FORM)),
     };
-    // let response: E::Response = request.recv_json().await.unwrap();
     let raw = request.recv_string().await.unwrap();
     debug!("Raw response {}", raw);
-    let response: SlackAPIResultResponse<E::Response> = serde_json::from_str(&raw).unwrap();
-    match &response {
-        SlackAPIResultResponse::Ok(_ok) =>  info!("Got Slack response successfully"),
-        SlackAPIResultResponse::Err(e) =>  error!("Slack responded with an error on the request for {}: {:?}", endpoint.endpoint_url(), e.error),
+    let response: SlackApiResponse<E::Response> = serde_json::from_str(&raw).unwrap();
+    debug!("Serialized from JSON {:?}", response);
+    match &response.content {
+        SlackApiContent::Ok(_ok) =>  info!("Got Slack response successfully"),
+        SlackApiContent::Err(e) =>  error!("Slack responded with an error on the request for {}: {:?}", endpoint.endpoint_url(), e.error),
     };
-    debug!("JSON response {}", serde_json::to_string(&response).unwrap());
     
     response
 }
@@ -51,7 +50,7 @@ pub async fn call_endpoint<E: SlackEndpoint>(
 pub enum SlackApiError {
     ///Invalid user id provided
     invalid_user_id,
-
+    
     /// The channel passed is invalid
     invalid_channel, 
 
@@ -161,29 +160,52 @@ pub enum SlackApiError {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(non_camel_case_types)]
+pub enum SlackApiWarning {
+    missing_charset,
+    already_in_channel,
+}
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SlackApiErrorResponse {
-    ok: bool,
     pub error: SlackApiError,
-    warnings: Option<String>,
-    response_metadata: Option<serde_json::Value>
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct SlackApiResponse<T> {
+    /// Slack took great care of putting the ok to check for success, but I don't even need it, serde can tell from the fields.
+    ok: bool,
+    /// `content` is not a field that the API actually sends, but this allows to have a generic-ish struct. 
+    // flattened response with fields as is, will be deserialized and put together under this field.
+    #[serde(flatten)]
+    pub content: SlackApiContent<T>,
+    /// Sometimes some warnings. Logic won't do anythign about it, but it's good to know when developping.
+    pub warning: Option<SlackApiWarning>,
+    /// can have Metadata, or repeat warnings. Maybe other usages, but haven't seen yet, so aren't defined here, and won't be picked.
+    /// report if any raw response sends more!
+    pub response_metadata: Option<ResponseMetadata>
+
+}
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum SlackAPIResultResponse<T> {
+pub enum SlackApiContent<T> {
     Ok(T),
     Err(SlackApiErrorResponse)
 }
 
-impl<T> SlackAPIResultResponse<T> {
+impl<T> SlackApiResponse<T> {
     pub(crate) fn unwrap(self) -> T {
-        match self {
-            SlackAPIResultResponse::Ok(value) => value,
-            SlackAPIResultResponse::Err(error) => panic!("{:?}", error)
+        match self.content {
+            SlackApiContent::Ok(value) => value,
+            SlackApiContent::Err(error) => panic!("{:?}", error)
         }
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResponseMetadata {
+    pagination: Option<Pagination>,
+    warnings: Option<Vec<SlackApiWarning>>
+}
 //** Concrete implementations  **
 
 // Schedule Message
@@ -228,16 +250,15 @@ impl ScheduleMessageRequest {
         }
     }
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ScheduleMessageResponseRaw {
-    ok: bool,
     channel: String,
     scheduled_message_id: String,
     post_at: i64,
     message: MessageResponse,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MessageResponse {
     pub text: String,
     user: String,
@@ -248,7 +269,7 @@ pub struct MessageResponse {
     bot_profile: Option<BotProfile>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BotProfile {
     id: String, 
     deleted: bool,
@@ -259,31 +280,21 @@ pub struct BotProfile {
     team_id: String
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct Icons {
     image_36: Option<String>,
     image_48: String,
     image_72: String
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Attachments {
     text: String,
     id: String,
     fallback: String,
 }
 
-#[derive(Debug)]
-struct ParseIntStringError;
-impl std::fmt::Display for ParseIntStringError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "Failed to parse the String as i64 Integer")
-    }
-}
-impl std::error::Error for ParseIntStringError {}
-
 #[derive(Serialize, Deserialize)]
 pub struct ScheduleMessageResponse {
-    ok: bool,
     pub channel: String,
     pub scheduled_message_id: String,
     pub post_at: DateTime<Utc>,
@@ -293,7 +304,6 @@ pub struct ScheduleMessageResponse {
 impl From<ScheduleMessageResponseRaw> for ScheduleMessageResponse {
     fn from(mess: ScheduleMessageResponseRaw) -> Self {
         ScheduleMessageResponse {
-            ok: mess.ok,
             channel: mess.channel,
             scheduled_message_id: mess.scheduled_message_id,
             post_at: Utc.timestamp(mess.post_at, 0),
@@ -302,15 +312,6 @@ impl From<ScheduleMessageResponseRaw> for ScheduleMessageResponse {
     }
 }
 
-impl std::fmt::Display for ScheduleMessageResponse {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "{}",
-            serde_json::to_string_pretty(&self).unwrap()
-        )
-    }
-}
 // </> Schedule message
 
 // User Lookup By Email
@@ -392,7 +393,6 @@ pub struct Team {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserLookupResponse {
-    ok: bool,
     pub user: UserObject,
     // pub team: Team,
 }
@@ -417,21 +417,23 @@ pub async fn list_members_for_channel(client: &Client, channel: &String) -> Resu
     let mut members = Vec::new();
     let mut request = ListMembersRequestParams {channel: channel.clone(), cursor: None};
     loop {
-        let response_res = call_endpoint(ListMembersEndpoint, &request, client).await;
-        match response_res {
-            SlackAPIResultResponse::Ok(response) => {
+        let full_response = call_endpoint(ListMembersEndpoint, &request, client).await;
+        match full_response.content {
+            SlackApiContent::Ok(response) => {
                 members.extend(response.members);
-                if let Some(next_cursor) = response.response_metadata.next_cursor {
-                    if !next_cursor.is_empty() {
-                        request.cursor = Some(next_cursor)
+                if let Some(metadata) = full_response.response_metadata {
+                    if let Some(pag) = metadata.pagination {
+                        if !pag.next_cursor.is_empty() {
+                            request.cursor = Some(pag.next_cursor);
+                        } else {
+                            break;
+                        }
                     } else {
                         break;
-                    }
-                } else {
-                    break;
-                };
+                    };
+                }
             },
-            SlackAPIResultResponse::Err(err) => return Err(err.error)
+            SlackApiContent::Err(err) => return Err(err.error)
         }
     };
     Ok(members)
@@ -455,23 +457,33 @@ pub async fn list_scheduled_messages(client: &Client, channel: &str) -> Vec<Sche
     let mut all_responses = Vec::new();
 
     loop {
-        let response = call_endpoint(ListScheduledMessagesEndpoint, &request, client).await.unwrap();
-        let page_objects_iterator = response
-            .scheduled_messages
-            .iter()
-            .map(|element| ScheduledMessageObject::from(element));
-        all_responses.extend(page_objects_iterator);
-        debug!("Added to total, {} items", all_responses.len());
-        if let Some(next_cursor) = response.response_metadata.next_cursor {
-            if !next_cursor.is_empty() {
-                request.cursor = Some(next_cursor)
-            } else {
+        let full_response = call_endpoint(ListScheduledMessagesEndpoint, &request, client).await;
+        match full_response.content {
+            SlackApiContent::Ok(response) => {
+                let page_objects_iterator = response
+                    .scheduled_messages
+                    .iter()
+                    .map(|element| ScheduledMessageObject::from(element));
+                all_responses.extend(page_objects_iterator);
+                debug!("Added to total, {} items", all_responses.len());
+                if let Some(metadata) = full_response.response_metadata {
+                    if let Some(pag) = metadata.pagination {
+                        if !pag.next_cursor.is_empty() {
+                            request.cursor = Some(pag.next_cursor);
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    };
+                }
+            },
+            SlackApiContent::Err(err) => {
+                error!("{:?}", err);
                 break;
             }
-        } else {
-            break;
-        };
-    }
+        }
+    };
 
     debug!("Total {} scheduled message fetched", all_responses.len());
     all_responses
@@ -498,24 +510,23 @@ impl Default for ScheduledMessagesListRequest {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ScheduledMessagesListRaw {
-    ok: bool,
     scheduled_messages: Vec<ScheduledMessageObjectRaw>,
-    response_metadata: Pagination,
+    // response_metadata: Pagination,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Pagination {
-    next_cursor: Option<String>,
+    next_cursor: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScheduledMessageObjectRaw {
-    id: String,
     channel_id: String,
-    post_at: i64,
     date_created: i64,
+    id: String,
+    post_at: i64,
     text: String,
 }
 
@@ -563,10 +574,8 @@ pub struct ListMembersRequestParams {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListMembersResponse {
-    ok: bool,
     // List OF IDs
     pub members: Vec<String>,
-    response_metadata: Pagination,
 }
 
 //** Join Conversation Endpoint
@@ -592,10 +601,7 @@ pub struct JoinConversationRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JoinConversationResponse {
-    ok: bool,
     pub channel: ChannelObject,
-    pub warning: Option<String>,
-    response_metadata: Option<Warnings>
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -606,8 +612,8 @@ pub struct Warnings {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelObject {
-    id: String,
-    name: String,
+    pub id: String,
+    pub name: String,
     is_channel: bool,
     is_group: bool,
     is_im: bool,
