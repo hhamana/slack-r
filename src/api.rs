@@ -1,4 +1,4 @@
-use chrono::{DateTime, TimeZone, Utc, Local};
+use chrono::{DateTime, TimeZone, Local};
 use log::{debug, error, info};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use surf::Client;
@@ -270,7 +270,7 @@ pub struct Attachments {
 pub struct ScheduleMessageResponse {
     pub channel: String,
     pub scheduled_message_id: String,
-    pub post_at: DateTime<Utc>,
+    pub post_at: DateTime<Local>,
     pub message: MessageResponse,
 }
 
@@ -279,7 +279,7 @@ impl From<ScheduleMessageResponseRaw> for ScheduleMessageResponse {
         ScheduleMessageResponse {
             channel: mess.channel,
             scheduled_message_id: mess.scheduled_message_id,
-            post_at: Utc.timestamp(mess.post_at, 0),
+            post_at: Local.timestamp(mess.post_at, 0),
             message: mess.message,
         }
     }
@@ -501,8 +501,8 @@ pub struct ScheduledMessageObjectRaw {
 pub struct ScheduledMessageObject {
     id: String,
     channel_id: String,
-    post_at: DateTime<Utc>,
-    date_created: DateTime<Utc>,
+    post_at: DateTime<Local>,
+    date_created: DateTime<Local>,
     text: String,
 }
 
@@ -510,8 +510,10 @@ impl std::fmt::Display for ScheduledMessageObject {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}: {} - {} (Created at {})",
-            self.post_at, self.channel_id, self.text, self.date_created
+            "ID: {}, created {}, scheduled for {} - #{}:  {}",
+            self.id, self.date_created.to_rfc2822(), self.post_at.to_rfc2822(), self.channel_id,  self.text
+            // "{}: {} - {} (Created at {})",
+            // self.post_at, self.channel_id, self.text, self.date_created
         )
     }
 }
@@ -521,14 +523,14 @@ impl From<&ScheduledMessageObjectRaw> for ScheduledMessageObject {
         ScheduledMessageObject {
             id: raw.id.clone(),
             channel_id: raw.channel_id.clone(),
-            post_at: Utc.timestamp(raw.post_at, 0),
-            date_created: Utc.timestamp(raw.date_created, 0),
+            post_at: Local.timestamp(raw.post_at, 0),
+            date_created: Local.timestamp(raw.date_created, 0),
             text: raw.text.clone(),
         }
     }
 }
 impl ScheduledMessageObject {
-    pub fn date(&self) -> chrono::Date<Utc> {
+    pub fn date(&self) -> chrono::Date<Local> {
         self.post_at.date()
     }
 }
