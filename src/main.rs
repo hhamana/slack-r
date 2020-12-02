@@ -31,7 +31,7 @@ fn main() {
             .validator(validate_date_input)
             .help("Select a specific day. Format as YYYY-MM-DD. Only dates in the future are allowed.")
         );
-
+    
     let add_member_command = SubCommand::with_name("member")
         .about("Adds a member ID to config, taking email as input to lookup Slack ID.")
         .arg(Arg::with_name("email")
@@ -83,6 +83,15 @@ fn main() {
         
     let scheduled_command = SubCommand::with_name("scheduled")
         .about("Prints all scheduled messages for the bot.");
+    
+    let cancel_command = SubCommand::with_name("cancel")
+        .about("Cancel a scheduled message from the ID.")
+        .long_about("Cancel a scheduled message from the ID.\nYou can use `scheduled` to checkfor scheduled messages and see if there is one you want to cancel.\nWill ask for confirmation.")
+        .arg(Arg::with_name("id")
+            .takes_value(true)
+            .required(true)
+            .help("Define the message ID to cancel.")
+        );
 
     let config_long_about = format!("Configuration is saved to a local file, defaulting to {} in the current folder, 
         the path and filename of which can be configured with the {} environnment variable.\n
@@ -128,6 +137,7 @@ fn main() {
         .subcommand(joke_command)
         .subcommand(config_command)
         .subcommand(add_command)
+        .subcommand(cancel_command)
         .subcommand(scheduled_command);
     // CLI defined,
     let matches = app.get_matches();
@@ -159,6 +169,11 @@ fn main() {
         ("scheduled", _) => {
             debug!("Scheduled subcommand");
             task::block_on(bot.check_scheduled_messages());
+        },
+        ("cancel", Some(args)) => {
+            debug!("Cancel subcommand");
+            let id = args.value_of("id").unwrap();
+            task::block_on(bot.cancel_scheduled_message(id));
         },
         ("add", Some(args)) => {
             match args.subcommand() {
