@@ -499,7 +499,7 @@ pub struct ScheduledMessageObjectRaw {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScheduledMessageObject {
-    id: String,
+    pub id: String,
     channel_id: String,
     post_at: DateTime<Local>,
     date_created: DateTime<Local>,
@@ -511,7 +511,7 @@ impl std::fmt::Display for ScheduledMessageObject {
         write!(
             f,
             "ID: {}, created {}, scheduled for {} - #{}:  {}",
-            self.id, self.date_created.to_rfc2822(), self.post_at.to_rfc2822(), self.channel_id,  self.text
+            self.id, self.date_created.to_rfc3339(), self.post_at.to_rfc3339(), self.channel_id,  self.text
             // "{}: {} - {} (Created at {})",
             // self.post_at, self.channel_id, self.text, self.date_created
         )
@@ -614,7 +614,39 @@ pub struct ChannelTopic {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelPurpose {
-value: String,
-creator: String,
-last_set: i64,
+    value: String,
+    creator: String,
+    last_set: i64,
 }
+
+
+#[derive(Debug)]
+pub struct DeleteScheduledMessageEndpoint;
+impl SlackEndpoint for DeleteScheduledMessageEndpoint {
+    type Request = DeleteScheduledMessageRequest;
+    type Response = EmptyResponse;
+
+    fn endpoint_url(&self) -> &str {
+        "chat.deleteScheduledMessage"
+    }
+
+    fn method(&self) -> HttpVerb {
+        HttpVerb::POST
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteScheduledMessageRequest {
+    channel: String,
+    scheduled_message_id: String,
+}
+impl DeleteScheduledMessageRequest {
+    pub fn new(channel: &str, id: &str) -> DeleteScheduledMessageRequest {
+        DeleteScheduledMessageRequest {
+            channel: channel.to_string(),
+            scheduled_message_id: id.to_string()
+        }
+    }
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EmptyResponse {}

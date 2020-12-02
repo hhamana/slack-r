@@ -301,7 +301,7 @@ impl SlackBot {
         println!("{:?}", self.config);
         let path = BotConfig::get_config_path();
         println!("Save to file at {:?}? y/n", path);
-        if yes_no_input() {
+        if yes() {
             self.save();
         }
     }
@@ -315,7 +315,7 @@ impl SlackBot {
             SlackApiContent::Ok(response) => {
                 let name = response.user.profile.display_name.or(Some(response.user.name)).unwrap();
                 println!("Found user {}. Is it who you want, save its ID {} in config? y/n", name, response.user.id);
-                if yes_no_input() {
+                if yes() {
                     self.config.members.push(response.user.id);
                 }
             },
@@ -395,6 +395,34 @@ impl SlackBot {
         if messages.is_empty() { return false };
         messages.iter().all(|mess| mess.date() == date.date())
     }
+    
+    pub async fn cancel_scheduled_message(self, id: &str) {
+        let messages = api::list_scheduled_messages(&self.client, &self.config.channel).await;
+        debug!("Filtering from {} messages", messages.len());
+        let lookup = messages.iter().find(|mess| mess.id == id);
+        let message = match lookup {
+            Some(mess) => {
+                println!("Found message: {}", mess);
+                println!("Please confirm cancellation: Y/n");
+                if yes() {
+                    mess
+                } else {
+                    warn!("Scheduled message kept.");
+                    return;
+                }
+            }
+            None => {
+                error!("No scheduled message with id {}", id);
+                return;
+            }
+        };
+        let request = api::DeleteScheduledMessageRequest::new(&self.config.channel, &message.id);
+        let response = api::call_endpoint(api::DeleteScheduledMessageEndpoint, &request, &self.client).await;
+        match response.content {
+            SlackApiContent::Ok(_empty) => println!("Deleted message with id {}", id),
+            SlackApiContent::Err(err) => error!("Failed to delete: {:?}", err)
+        }
+    }
 
 }
 
@@ -420,7 +448,7 @@ impl Middleware for HeadersMiddleware {
     }
 }
 
-fn yes_no_input() -> bool {
+fn yes() -> bool {
     let mut buff = String::new();
     match std::io::stdin().read_line(&mut buff) {
         Ok(_bytes) => {
