@@ -86,7 +86,7 @@ fn main() {
     
     let cancel_command = SubCommand::with_name("cancel")
         .about("Cancel a scheduled message from the ID.")
-        .long_about("Cancel a scheduled message from the ID.\nYou can use `scheduled` to checkfor scheduled messages and see if there is one you want to cancel.\nWill ask for confirmation.")
+        .long_about("Cancel a scheduled message from the ID.\nThe ID is printed in succesful `joke` comand execution.\nAlternatively, you can get all scheduled messages IDs by using the `scheduled` command.\nWill ask for confirmation.")
         .arg(Arg::with_name("id")
             .takes_value(true)
             .required(true)

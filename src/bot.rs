@@ -198,24 +198,30 @@ impl SlackBot {
             };
             match unfiltered.date().weekday() {
                 // weekend dates shifted to next monday
-                Weekday::Sat => unfiltered + Duration::days(2),
-                Weekday::Sun => unfiltered + Duration::days(1),
+                Weekday::Sat => {
+                    warn!("Target date is a Saturday, shifting target to next Monday.");
+                    unfiltered + Duration::days(2)
+                },
+                Weekday::Sun => {
+                    warn!("Target date is a Sunday, shifting target to next Monday.");
+                    unfiltered + Duration::days(1)
+                },
                 _ => unfiltered
             }
         };
-        info!("Target datetime: {}", target_date);
+        info!("Target datetime: {}.", target_date);
         
         let schedule_date = {
             let unfiltered = target_date - Duration::seconds(self.config.target_time_schedule_offset);
             match unfiltered.date().weekday() {
                 Weekday::Sun => {
-                    debug!("Joke for a monday, scheduled to sunday, shifting to friday before");
+                    warn!("Offset falling on a sunday, shifting schedule to the Friday before");
                     unfiltered - Duration::days(2)
                 },
                 _ => unfiltered
             }
         };
-        info!("Message schedule datetime: {}", schedule_date);
+        info!("Message schedule datetime: {}. Timestamp {}", schedule_date, schedule_date.timestamp());
         
         if schedule_date <= Local::now() {
             error!("Too late to post for {}!", schedule_date);
@@ -224,7 +230,7 @@ impl SlackBot {
         
         debug!("Checking it isn't already scheduled for channel...");
         if self.date_already_been_scheduled(schedule_date, &self.config.channel).await {
-            error!("This date has already been scheduled. Check with `scheduled` command");
+            error!("This date has already been scheduled. Check with `scheduled` command, and/or cancel with the `delete <ID>` command.");
             return;
         };
         debug!("Nothing scheduled on {}, continuing", schedule_date);
@@ -357,7 +363,7 @@ impl SlackBot {
             Err(err) => {
                 match err {
                     SlackApiError::invalid_channel 
-                    | SlackApiError::channel_not_found => error!("The channel {} is invalid", channel),
+                    | SlackApiError::channel_not_found => error!("The channel {} is invalid. A channel ID can be acquired from the URL of a message quote.", channel),
                     _ => error!("Slack error: {:?}.", err)
                 }
                 warn!("Adding empty members list");
@@ -392,8 +398,7 @@ impl SlackBot {
 
     async fn date_already_been_scheduled(&self, date: DateTime<Local>, channel: &str) -> bool {
         let messages = api::list_scheduled_messages(&self.client, channel).await;
-        if messages.is_empty() { return false };
-        messages.iter().all(|mess| mess.date() == date.date())
+        messages.iter().any(|mess| mess.date() == date.date())
     }
     
     pub async fn cancel_scheduled_message(self, id: &str) {
@@ -412,7 +417,7 @@ impl SlackBot {
                 }
             }
             None => {
-                error!("No scheduled message with id {}", id);
+                error!("No scheduled message with id \"{}\"", id);
                 return;
             }
         };
