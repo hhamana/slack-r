@@ -34,17 +34,20 @@ struct BotConfig {
     target_time_schedule_offset: i64,
     /// Slack API token for the bot.
     token: Option<String>,
+    // Bot self Id, acquired as a check for the token.
+    id: String,
 }
 
 impl Default for BotConfig {
     fn default() -> Self {
         BotConfig {
             members: Vec::new(),
-            channel: "channel".to_string(),
+            channel: String::new(),
             target_time: NaiveTime::from_hms(11, 15, 0),
             // this is the 
             target_time_schedule_offset: Duration::hours(23).num_seconds(),
             token: None,
+            id: String::new()
         }
     }
 }
@@ -161,15 +164,10 @@ impl SlackBot {
         };
 
         debug!("Creating Internet client");
-        let headers = HeadersMiddleware { token };
-        let mut client = Client::new()
-            .with(Logger::new())
-            .with(headers);
-        client.set_base_url(Url::parse(SLACK_API_URL).unwrap());
+        let client = create_client(token);
         debug!("Bot setup complete");
         SlackBot { client, config }
     }
-
     
     pub fn save(self) {
         match self.config.to_file() {
@@ -297,7 +295,7 @@ impl SlackBot {
 
         if let Some(token) = token_opt { 
             info!("Token: {}", token); 
-            self.add_token(token)
+            self.add_token(token).await;
         };
 
         if let Some(target_time) = target_time_opt {
@@ -370,12 +368,29 @@ impl SlackBot {
                 vec![]
             }
         };
-        self.config.members.extend(members);
+        self.config.members.extend(members
+            .into_iter()
+            .filter(|e| e != &self.config.id)
+            .filter(|e| !self.config.members.contains(e))
+            .collect::<Vec<String>>());
+        // self.config.members = self.config.members.into_iter()
+        //                                         .chain(members)
+        //                                         .collect();
+                                                
         self.config.channel = channel;
     }
 
-    pub fn add_token(&mut self, token: &str) {
-        self.config.token = Some(token.to_string());
+    pub async fn add_token(&mut self, token: &str) {
+        let new_client = create_client(token.to_string());
+        let request = api::Empty{};
+        let identity = api::call_endpoint(api::UserIdentityEndpoint, &request, &new_client).await;
+        match identity.content {
+            SlackApiContent::Ok(res) => {
+                self.config.id = res.user.id;
+                self.config.token = Some(token.to_string());
+            },
+            SlackApiContent::Err(err) => error!("Slack error: {:?}.", err)
+        }
     }
 
     pub fn add_target_time(&mut self, target_time: &str) {
@@ -463,4 +478,13 @@ fn yes() -> bool {
         }
         Err(_err) => { false },
     }
+}
+
+fn create_client(token: String) -> Client {
+    let headers = HeadersMiddleware { token };
+    let mut client = Client::new()
+        .with(Logger::new())
+        .with(headers);
+    client.set_base_url(Url::parse(SLACK_API_URL).unwrap());
+    client
 }
