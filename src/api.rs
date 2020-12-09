@@ -17,6 +17,15 @@ pub trait SlackEndpoint where Self: std::fmt::Debug {
 
     fn endpoint_url(&self) -> &str;
     fn method(&self) -> HttpVerb;
+    fn build_request(&self, client: &Client, request: &Self::Request) -> surf::RequestBuilder {
+        let data = serde_json::to_value(request).unwrap();
+        debug!("JSON request {}", data);
+        match self.method() {
+            HttpVerb::POST => client.post(self.endpoint_url()).body(data),
+            HttpVerb::GET => client.get(self.endpoint_url()).query(&data).unwrap()
+                .header(surf::http::headers::CONTENT_TYPE, format!("{}; charset=utf-8", surf::http::mime::FORM)),
+        }
+    }
 }
 
 pub async fn call_endpoint<E: SlackEndpoint>(
@@ -26,14 +35,8 @@ pub async fn call_endpoint<E: SlackEndpoint>(
 ) -> SlackApiResponse<E::Response> {
 // ) -> E::Response  {
     info!("Calling {:?}", endpoint);
-    let data = serde_json::to_value(request).unwrap();
-    debug!("JSON request {}", data);
-    let request = match endpoint.method() {
-        HttpVerb::POST => client.post(endpoint.endpoint_url()).body(data),
-        HttpVerb::GET => client.get(endpoint.endpoint_url()).query(&data).unwrap()
-            .header(surf::http::headers::CONTENT_TYPE, format!("{}; charset=utf-8", surf::http::mime::FORM)),
-    };
-    let raw = request.recv_string().await.unwrap();
+    let request_builder = endpoint.build_request(client, request);
+    let raw = request_builder.recv_string().await.unwrap();
     debug!("Raw response {}", raw);
     let response: SlackApiResponse<E::Response> = serde_json::from_str(&raw).unwrap();
     debug!("Serialized from JSON {:?}", response);
@@ -122,8 +125,9 @@ pub enum SlackApiError {
     /// The server could not complete your operation(s) without encountering a catastrophic error. It's possible some aspect of the operation succeeded before the error was raised.
     fatal_error,
     /// Complete Slack API failure
-
     internal_error,
+    /// Not found
+    method_not_found
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -367,7 +371,7 @@ pub struct Team {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserLookupResponse {
     pub user: UserObject,
-    // pub team: Team,
+    pub team: Option<Team>,
 }
 
 
@@ -624,7 +628,7 @@ pub struct ChannelPurpose {
 pub struct DeleteScheduledMessageEndpoint;
 impl SlackEndpoint for DeleteScheduledMessageEndpoint {
     type Request = DeleteScheduledMessageRequest;
-    type Response = EmptyResponse;
+    type Response = Empty;
 
     fn endpoint_url(&self) -> &str {
         "chat.deleteScheduledMessage"
@@ -649,4 +653,47 @@ impl DeleteScheduledMessageRequest {
     }
 }
 #[derive(Debug, Serialize, Deserialize)]
-pub struct EmptyResponse {}
+pub struct Empty {}
+
+#[derive(Debug)]
+pub struct UserIdentityEndpoint;
+
+impl SlackEndpoint for UserIdentityEndpoint {
+    type Request = Empty;
+    type Response = UserIdentity;
+    fn endpoint_url(&self) -> &str {
+        "users.identity"
+    }
+
+    fn method(&self) -> HttpVerb {
+        HttpVerb::GET
+    }
+
+    fn build_request(&self, client: &Client, _request: &Self::Request) -> surf::RequestBuilder {
+    // override so the empty request doesn't call a GET "/users.identity?"
+        client.get(self.endpoint_url())
+            .header(surf::http::headers::CONTENT_TYPE, format!("{}; charset=utf-8", surf::http::mime::FORM))
+            
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserIdentity {
+    pub user: ShortUserObject,
+    pub team: ShortTeam,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ShortUserObject {
+    pub name: String, 
+    pub id: String,
+    email: Option<String>
+    
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ShortTeam {
+    id: String,
+    name: Option<String>
+
+}

@@ -185,7 +185,8 @@ fn main() {
                 ("token", Some(token_args)) => {
                     debug!("Add Token subcommand");
                     let token = token_args.value_of("token").unwrap();
-                    bot.add_token(token);
+                    task::block_on(bot.add_token(token));
+
                 },
                 ("channel", Some(channel_args)) => {
                     debug!("Add Channel subcommand");
