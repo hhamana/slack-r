@@ -282,6 +282,10 @@ impl SlackBot {
         info!("Processing config command");
         // let mut build_config = self.config;
         debug!("Parsing given config arguments");
+        if let Some(token) = token_opt { 
+            info!("Token: {}", token); 
+            self.add_token(token).await;
+        };
         if let Some(members) = members_opt {
             debug!("Got members {:?}", members);
             for email in members {
@@ -293,10 +297,6 @@ impl SlackBot {
             self.add_channel(channel).await;
         };
 
-        if let Some(token) = token_opt { 
-            info!("Token: {}", token); 
-            self.add_token(token).await;
-        };
 
         if let Some(target_time) = target_time_opt {
             info!("Target time: {}", target_time);
@@ -388,6 +388,7 @@ impl SlackBot {
             SlackApiContent::Ok(res) => {
                 self.config.id = res.user_id;
                 self.config.token = Some(token.to_string());
+                self.client = new_client;
             },
             SlackApiContent::Err(err) => error!("Slack error: {:?}.", err)
         }
