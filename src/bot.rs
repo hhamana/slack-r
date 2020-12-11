@@ -383,10 +383,10 @@ impl SlackBot {
     pub async fn add_token(&mut self, token: &str) {
         let new_client = create_client(token.to_string());
         let request = api::Empty{};
-        let identity = api::call_endpoint(api::UserIdentityEndpoint, &request, &new_client).await;
+        let identity = api::call_endpoint(api::AuthTestEndpoint, &request, &new_client).await;
         match identity.content {
             SlackApiContent::Ok(res) => {
-                self.config.id = res.user.id;
+                self.config.id = res.user_id;
                 self.config.token = Some(token.to_string());
             },
             SlackApiContent::Err(err) => error!("Slack error: {:?}.", err)

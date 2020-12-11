@@ -329,12 +329,12 @@ pub struct UserObject {
     is_restricted: bool,
     is_ultra_restricted: bool,
     is_bot: bool,
-    is_stranger: bool,
+    is_stranger: Option<bool>,
     updated: u64,
     is_app_user: bool,
-    is_invited_user: bool,
-    has_2fa: bool,
-    locale: String
+    is_invited_user: Option<bool>,
+    has_2fa: Option<bool>,
+    locale: Option<String>
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -346,13 +346,14 @@ pub struct UserProfile {
     real_name_normalized: Option<String>,
     pub display_name: Option<String>,
     display_name_normalized: Option<String>,
+    fields: Option<Vec<String>>,
     status_text: Option<String>,
     status_emoji: Option<String>,
     status_expiration: Option<u64>,
     avatar_hash: Option<String>,
+    // pub email: Option<String>,
     first_name: Option<String>,
     last_name: Option<String>,
-    pub email: Option<String>,
     image_original: Option<String>,
     image_24: String,
     image_32: String,
@@ -360,8 +361,10 @@ pub struct UserProfile {
     image_72: String,
     image_192: String,
     image_512: String,
-    team: Option<String>,
+    status_text_canonical: Option<String>,
+    team: Option<String>
 }
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Team {
     id: String,
@@ -656,13 +659,13 @@ impl DeleteScheduledMessageRequest {
 pub struct Empty {}
 
 #[derive(Debug)]
-pub struct UserIdentityEndpoint;
+pub struct AuthTestEndpoint;
 
-impl SlackEndpoint for UserIdentityEndpoint {
+impl SlackEndpoint for AuthTestEndpoint {
     type Request = Empty;
-    type Response = UserIdentity;
+    type Response = BotIdentity;
     fn endpoint_url(&self) -> &str {
-        "users.identity"
+        "auth.test"
     }
 
     fn method(&self) -> HttpVerb {
@@ -670,7 +673,7 @@ impl SlackEndpoint for UserIdentityEndpoint {
     }
 
     fn build_request(&self, client: &Client, _request: &Self::Request) -> surf::RequestBuilder {
-    // override so the empty request doesn't call a GET "/users.identity?"
+    // override so the empty request doesn't call a GET "/auth.test?"
         client.get(self.endpoint_url())
             .header(surf::http::headers::CONTENT_TYPE, format!("{}; charset=utf-8", surf::http::mime::FORM))
             
@@ -678,22 +681,11 @@ impl SlackEndpoint for UserIdentityEndpoint {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct UserIdentity {
-    pub user: ShortUserObject,
-    pub team: ShortTeam,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ShortUserObject {
-    pub name: String, 
-    pub id: String,
-    email: Option<String>
-    
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ShortTeam {
-    id: String,
-    name: Option<String>
-
+pub struct BotIdentity {
+    url: String,
+    pub team: String,
+    user: String,
+    team_id: String,
+    pub user_id: String,
+    pub bot_id: String,
 }
