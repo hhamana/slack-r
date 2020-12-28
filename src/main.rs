@@ -29,8 +29,18 @@ fn main() {
             .takes_value(true)
             .multiple(true)
             .validator(validate_date_input)
-            .help("Select a specific day. Format as YYYY-MM-DD. Only dates in the future are allowed.")
+            .help("Select a specific day to include in the message. Format as YYYY-MM-DD. Only dates in the future are allowed. Defaults to tomorrow."))
+        .arg(Arg::with_name("post_on")
+            .short("p")
+            .long("post_on")
+            .takes_value(true)
+            .multiple(false)
+            .validator(validate_date_input)
+            .help("Select a specific day to schedule the message. Format as YYYY-MM-DD. Only dates in the future but before the --day argument allowed. Default to be calculated before the target day, before weekends. This arg allows overriding.")
         );
+    let reroll_command = SubCommand::with_name("reroll")
+        .about("Reroll for the next day")
+        .help("Reroll for the next day, allowing you to preview the randomly selected name to filter out.");
     
     let add_member_command = SubCommand::with_name("member")
         .about("Adds a member ID to config, taking email as input to lookup Slack ID.")
@@ -135,6 +145,7 @@ fn main() {
             .help("Sets the level of verbosity, the more \"v\" the more verbose, up to -vvv.")
         )
         .subcommand(joke_command)
+        .subcommand(reroll_command)
         .subcommand(config_command)
         .subcommand(add_command)
         .subcommand(cancel_command)
@@ -164,7 +175,12 @@ fn main() {
         ("joke", Some(args)) => {
             debug!("Joke subcommand");
             let input_date_arg = args.value_of("day");
-            task::block_on(bot.joke(input_date_arg));
+            let scheduled_day_arg = args.value_of("post_on");
+            task::block_on(bot.joke(input_date_arg, scheduled_day_arg));
+        },
+        ("reroll", Some(_args)) => {
+            debug!("Reroll subcommand");
+            task::block_on(bot.reroll());
         },
         ("scheduled", _) => {
             debug!("Scheduled subcommand");
@@ -229,6 +245,7 @@ pub struct SlackRError;
 
 /// Takes a date string such as "2020-10-21" and returns a Datetime instance with local timezone and current time.
 /// Returns a String as error, so it can be used to validate while invoking as command line argument too
+/// Uses `today` to reuse its time and formatting
 fn convert_date_string_to_local(
     input_date: &str,
     today: &DateTime<Local>,

@@ -22,7 +22,7 @@ use crate::{
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BotConfig {
-    /// The list of memmbers ids that can be selected. Adds all of the channel when added to a channel.
+    /// The list of members ids that can be selected. Adds all of the channel when added to a channel.
     members: Vec<String>,
     /// The channel on which this bot will post. Single channel per config. 
     /// You may  have a different config file for different channels, although this behaviour is untested yet.
@@ -176,62 +176,25 @@ impl SlackBot {
         }
     }
 
-    pub async fn joke(self, input_date_arg: Option<&str>) {
-        info!("Processing joke command");
-        let today_with_target_time = Local::today().and_time(self.config.target_time).unwrap();
-        
-        let target_date: DateTime<Local> = {
-            let unfiltered = match input_date_arg {
-                Some(input_date_str) => {
-                    debug!("Date {} was input", input_date_str);
-                    // let input_plus_time = format!("{} {} {}", input_date_str, today_with_target_time.time(), today_with_target_time.offset());
-
-                    // Unwrapping is okay as it's been validated already by clap's matcher
-                    convert_date_string_to_local(&input_date_str, &today_with_target_time).unwrap()
-                }
-                None => {
-                    debug!("No date was input. Getting tomorrow.");
-                    today_with_target_time.date().succ().and_time(self.config.target_time).expect("Tomorrow may not exist. That's dark man.")
-                }
-            };
-            match unfiltered.date().weekday() {
-                // weekend dates shifted to next monday
-                Weekday::Sat => {
-                    warn!("Target date is a Saturday, shifting target to next Monday.");
-                    unfiltered + Duration::days(2)
-                },
-                Weekday::Sun => {
-                    warn!("Target date is a Sunday, shifting target to next Monday.");
-                    unfiltered + Duration::days(1)
-                },
-                _ => unfiltered
-            }
-        };
+    pub async fn joke(self, input_date_arg: Option<&str>, scheduled_day_arg: Option<&str>) {
+        info!("Processing joke command");        
+        let target_date = self.get_target_date(input_date_arg);
         info!("Target datetime: {}.", target_date);
         
-        let schedule_date = {
-            let unfiltered = target_date - Duration::seconds(self.config.target_time_schedule_offset);
-            match unfiltered.date().weekday() {
-                Weekday::Sun => {
-                    warn!("Offset falling on a sunday, shifting schedule to the Friday before");
-                    unfiltered - Duration::days(2)
-                },
-                _ => unfiltered
-            }
-        };
-        info!("Message schedule datetime: {}. Timestamp {}", schedule_date, schedule_date.timestamp());
+        let post_at = self.get_post_at_date(&target_date, scheduled_day_arg);
+        info!("Message schedule datetime: {}. Timestamp {}", post_at, post_at.timestamp());
         
-        if schedule_date <= Local::now() {
-            error!("Too late to post for {}!", schedule_date);
+        if post_at <= Local::now() {
+            error!("Too late to post for {}!", post_at);
             return;
         }
         
         debug!("Checking it isn't already scheduled for channel...");
-        if self.date_already_been_scheduled(schedule_date, &self.config.channel).await {
+        if self.date_already_been_scheduled(post_at).await {
             error!("This date has already been scheduled. Check with `scheduled` command, and/or cancel with the `delete <ID>` command.");
             return;
         };
-        debug!("Nothing scheduled on {}, continuing", schedule_date);
+        debug!("Nothing scheduled on {}, continuing", post_at);
         
         let member = match self.select_random_member() {
             Some(m) => {
@@ -249,14 +212,117 @@ impl SlackBot {
             member,
             target_date.naive_local().date()
         );
-
-        let request = api::ScheduleMessageRequest::new(
-            &self.config.channel, 
-            schedule_date.timestamp(), 
-            text);
-        let response = api::schedule_message(&self.client, &request).await;
+        let response = self.schedule_message(post_at.timestamp(), text).await;
         println!("Successfully assigned member {} for a joke on {}. Message will be posted at {}. Schedule ID: {}", 
             member,
+            target_date,
+            response.post_at,
+            response.scheduled_message_id
+        );
+    }
+
+    async fn schedule_message(&self, timestamp: i64, message: String) -> api::ScheduleMessageResponse {
+        let request = api::ScheduleMessageRequest::new(
+            &self.config.channel, 
+            timestamp,
+            message);
+        api::schedule_message(&self.client, &request).await
+    }
+
+    fn get_post_at_date(&self, target_date: &DateTime<Local>, scheduled_day_arg: Option<&str>) -> DateTime<Local> {
+        if let Some(scheduled_day) = scheduled_day_arg {
+            debug!("A target time was specified");
+            let schedule_time = convert_date_string_to_local(&scheduled_day, &target_date).unwrap();
+            match schedule_time.cmp(target_date) {
+                std::cmp::Ordering::Equal |
+                std::cmp::Ordering::Greater => {
+                    panic!("Scheduled time is after the target day!");
+                },
+                std::cmp::Ordering::Less => {
+                    info!("valid target time specified: {}", schedule_time);
+                    return schedule_time
+                }
+            }
+        };
+        debug!("Getting schedule time from target");
+        let unfiltered = *target_date - Duration::seconds(self.config.target_time_schedule_offset);
+        match unfiltered.date().weekday() {
+            Weekday::Sun => {
+                warn!("Offset falling on a sunday, shifting schedule to the Friday before");
+                unfiltered - Duration::days(2)
+            },
+            _ => unfiltered
+        }
+
+    }
+
+    fn get_target_date(&self, input_date_arg: Option<&str>) -> DateTime<Local> {
+        let today_with_target_time = Local::today().and_time(self.config.target_time).unwrap();
+        let unfiltered = match input_date_arg {
+            Some(input_date_str) => {
+                debug!("Date {} was input", input_date_str);
+                // Unwrapping is okay as it's been validated already by clap's matcher
+                convert_date_string_to_local(&input_date_str, &today_with_target_time).unwrap()
+            }
+            None => {
+                debug!("No date was input. Getting tomorrow.");
+                today_with_target_time.date().succ().and_time(self.config.target_time).expect("Tomorrow may not exist. That's dark man.")
+            }
+        };
+        match unfiltered.date().weekday() {
+            // weekend dates shifted to next monday
+            Weekday::Sat => {
+                warn!("Target date is a Saturday, shifting target to next Monday.");
+                unfiltered + Duration::days(2)
+            },
+            Weekday::Sun => {
+                warn!("Target date is a Sunday, shifting target to next Monday.");
+                unfiltered + Duration::days(1)
+            },
+            _ => unfiltered
+        }
+    }
+
+    pub async fn reroll(self) {
+        let mut exclude = Vec::new();
+        let mut selected_member;
+        let len_limit = self.config.members.len();
+        loop {
+            selected_member = match self.select_random_member() {
+                Some(m) => {
+                    info!("Selected member {}", m);
+                    m
+                },
+                None => {
+                    error!("No member could be selected!");
+                    return;
+                }
+            };
+            if exclude.contains(&selected_member) {
+                info!("Member already excluded. Automatically rerolling");
+                continue
+            };
+            println!("Member {} was selected. Pick it?", selected_member);
+            if yes() {
+                break
+            } else {
+                exclude.push(selected_member);
+                if exclude.len() + 1 == len_limit {
+                    error!("You have excluded all members!");
+                    return;
+                };
+            };
+        };
+        let target_date = self.get_target_date(None);
+        let post_at = Local::now() + Duration::seconds(30);
+        let message = format!(
+            "Reroll: <@{}> will be in charge of a joke on {}!",
+            selected_member,
+            target_date.naive_local().date()
+        );
+        let response = self.schedule_message(post_at.timestamp(), message).await;
+        println!("Successfully assigned member {} for a joke on {}. Message will be posted at {}. Schedule ID: {}", 
+            selected_member,
             target_date,
             response.post_at,
             response.scheduled_message_id
@@ -412,8 +478,8 @@ impl SlackBot {
         }
     }
 
-    async fn date_already_been_scheduled(&self, date: DateTime<Local>, channel: &str) -> bool {
-        let messages = api::list_scheduled_messages(&self.client, channel).await;
+    async fn date_already_been_scheduled(&self, date: DateTime<Local>) -> bool {
+        let messages = api::list_scheduled_messages(&self.client, &self.config.channel).await;
         messages.iter().any(|mess| mess.date() == date.date())
     }
     
