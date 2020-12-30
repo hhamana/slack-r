@@ -202,7 +202,6 @@ fn main() {
                     debug!("Add Token subcommand");
                     let token = token_args.value_of("token").unwrap();
                     task::block_on(bot.add_token(token));
-
                 },
                 ("channel", Some(channel_args)) => {
                     debug!("Add Channel subcommand");
@@ -245,15 +244,15 @@ pub struct SlackRError;
 
 /// Takes a date string such as "2020-10-21" and returns a Datetime instance with local timezone and current time.
 /// Returns a String as error, so it can be used to validate while invoking as command line argument too
-/// Uses `today` to reuse its time and formatting
+/// Uses `time` only for its time and offset as template for formatting.
 fn convert_date_string_to_local(
     input_date: &str,
-    today: &DateTime<Local>,
+    time: &DateTime<Local>,
 ) -> Result<DateTime<Local>, String> {
-    let input_plus_time = format!("{} {} {}", input_date, today.time(), today.offset());
+    let input_plus_time = format!("{} {} {}", input_date, time.time(), time.offset());
     debug!("Processing time input as {}", input_plus_time);
     let parsed_date = input_plus_time.parse::<DateTime<Local>>()
-        .map_err(|_e| format!("Not a date. Example format: {}", today.naive_local().date(),))?;
+        .map_err(|_e| format!("Not a date. Example format: {}", time.naive_local().date(),))?;
     debug!("Date successfully parsed");
     Ok(parsed_date)
 }

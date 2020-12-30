@@ -1,14 +1,6 @@
-use std::{
-    env,
-    fs::{write, File},
-    io::{self, Read},
-    path::PathBuf,
-};
-
 use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, Weekday};
 use log::{debug, error, info, warn};
 use rand::seq::SliceRandom;
-use serde::{Deserialize, Serialize};
 use surf::{
     middleware::{Logger, Middleware, Next},
     Client, Request, Response, Url,
@@ -20,123 +12,11 @@ use crate::{
     convert_date_string_to_local
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct BotConfig {
-    /// The list of members ids that can be selected. Adds all of the channel when added to a channel.
-    members: Vec<String>,
-    /// The channel on which this bot will post. Single channel per config. 
-    /// You may  have a different config file for different channels, although this behaviour is untested yet.
-    channel: String,
-    /// As input only accepts dates, this is the time that will be applied to the input date.
-    target_time: NaiveTime,
-    /// Possible offset for the actual time at which the message will be posted, to give some leeway for the joke to be prepared. 
-    /// Set to 0 to schedule at the target time.
-    target_time_schedule_offset: i64,
-    /// Slack API token for the bot.
-    token: Option<String>,
-    // Bot self Id, acquired as a check for the token.
-    id: String,
-}
+mod config;
+use config::BotConfig;
+mod utils;
+use utils::yes;
 
-impl Default for BotConfig {
-    fn default() -> Self {
-        BotConfig {
-            members: Vec::new(),
-            channel: String::new(),
-            target_time: NaiveTime::from_hms(11, 15, 0),
-            // this is the 
-            target_time_schedule_offset: Duration::hours(23).num_seconds(),
-            token: None,
-            id: String::new()
-        }
-    }
-}
-
-impl BotConfig {
-    fn new() -> BotConfig {
-        info!("Reading config path from {} env var", CONFIG_FILE_PATH_ENV_VAR);
-        let path = Self::get_config_path();
-        debug!("Got path");
-        match File::open(&path) {
-            Ok(file) => {
-                debug!("Config file already exists at the path. Setting up from it.");
-                BotConfig::from_file(file).unwrap_or_default()
-            },
-            Err(err) => {
-                debug!("Error opening file: {}", err);
-                // try to output a helpful message
-                match err.kind() {
-                    io::ErrorKind::NotFound => info!("Config file doesn't exist yet. Create manually and set up env var, or run `slack-r config` to create it"),
-                    io::ErrorKind::PermissionDenied => {
-                        if path.file_name().is_none() {
-                            error!("The path in {} must contain the file name! Using default config instead.", CONFIG_FILE_PATH_ENV_VAR);
-                        } else {
-                            error!("Permission denied when trying to open file at {}. Using default config instead.", CONFIG_FILE_PATH_ENV_VAR);
-                        }
-                    },
-                    _ => warn!("Error opening file at {}. {}", CONFIG_FILE_PATH_ENV_VAR, err)
-                }
-                debug!("Creating default BotConfig");
-                BotConfig::default()
-            }
-        }
-    }
-    
-    /// Gets the path to save/read the config file from either the environnment variable if set, or Default
-    fn get_config_path() -> PathBuf {
-        match env::var(CONFIG_FILE_PATH_ENV_VAR) {
-            Ok(path_string) => {
-                info!(
-                    "Env var {} set. Using path {}.",
-                    CONFIG_FILE_PATH_ENV_VAR, path_string
-                );
-                PathBuf::from(path_string)
-            }
-            Err(_e) => {
-                info!(
-                    "Env var {} not set. Using default path {}.",
-                    CONFIG_FILE_PATH_ENV_VAR, DEFAULT_CONFIG_PATH
-                );
-                PathBuf::from(DEFAULT_CONFIG_PATH)
-            }
-        }
-    }
-
-    /// Will read a given file handle, expected to contain the config in JSON format, and try to construct the config from it.
-    /// Errors will be ignored and simply ignore the file and return the default values, with warnings.
-    fn from_file(mut file: File) -> Result<Self, SlackRError> {
-        debug!("Reading file content...");
-        let mut buf = String::new();
-        match file.read_to_string(&mut buf) {
-            Ok(bytes_read) => debug!("Read {} bytes from the file.", bytes_read),
-            Err(e) => {
-                warn!("Error reading file: {}. Using default config values instead", e);
-                return Err(SlackRError);
-            }
-        };
-
-        let config = serde_json::from_str::<BotConfig>(&buf).map_err(|err| {
-            warn!("Failed parsing config file. {}", err);
-            SlackRError
-        })?;
-        info!("Successfully read config from file");
-        Ok(config)
-    }
-
-    // Writes config to file.
-    fn to_file(self) -> Result<(), SlackRError> {
-        let path = Self::get_config_path();
-        debug!("Writing to path {:?}", path);
-        let json = serde_json::to_string_pretty(&self).expect("Couldn't serialize BotConfig");
-        debug!("Serialized BotConfig as {}", json);
-        write(&path, json.as_bytes()).map_err(|e| {
-            error!("Couldn't write to file at the path {:?}. Error: {}", path, e);
-            SlackRError
-        })?;
-        info!("Saved config to file {:?}", path);
-        Ok(())
-    }
-}
 pub struct SlackBot {
     client: Client,
     config: BotConfig,
@@ -164,7 +44,7 @@ impl SlackBot {
         };
 
         debug!("Creating Internet client");
-        let client = create_client(token);
+        let client = utils::create_client(token);
         debug!("Bot setup complete");
         SlackBot { client, config }
     }
@@ -229,10 +109,15 @@ impl SlackBot {
         api::schedule_message(&self.client, &request).await
     }
 
-    fn get_post_at_date(&self, target_date: &DateTime<Local>, scheduled_day_arg: Option<&str>) -> DateTime<Local> {
-        if let Some(scheduled_day) = scheduled_day_arg {
+    fn date_with_set_time(&self) -> DateTime<Local> {
+        Local::today().and_time(self.config.target_time).expect("Couldn't generate time")
+    }
+
+    fn get_post_at_date(&self, target_date: &DateTime<Local>, post_at_arg: Option<&str>) -> DateTime<Local> {
+        if let Some(post_at) = post_at_arg {
             debug!("A target time was specified");
-            let schedule_time = convert_date_string_to_local(&scheduled_day, &target_date).unwrap();
+            let time = self.date_with_set_time();
+            let schedule_time = convert_date_string_to_local(&post_at, &time).unwrap();
             match schedule_time.cmp(target_date) {
                 std::cmp::Ordering::Equal |
                 std::cmp::Ordering::Greater => {
@@ -257,7 +142,8 @@ impl SlackBot {
     }
 
     fn get_target_date(&self, input_date_arg: Option<&str>) -> DateTime<Local> {
-        let today_with_target_time = Local::today().and_time(self.config.target_time).unwrap();
+        let today_with_target_time = self.date_with_set_time();
+
         let unfiltered = match input_date_arg {
             Some(input_date_str) => {
                 debug!("Date {} was input", input_date_str);
@@ -314,7 +200,7 @@ impl SlackBot {
             };
         };
         let target_date = self.get_target_date(None);
-        let post_at = Local::now() + Duration::seconds(30);
+        let post_at = Local::now() + Duration::seconds(self.config.instant_delay);
         let message = format!(
             "Reroll: <@{}> will be in charge of a joke on {}!",
             selected_member,
@@ -447,7 +333,7 @@ impl SlackBot {
     }
 
     pub async fn add_token(&mut self, token: &str) {
-        let new_client = create_client(token.to_string());
+        let new_client = utils::create_client(token.to_string());
         let request = api::Empty{};
         let identity = api::call_endpoint(api::AuthTestEndpoint, &request, &new_client).await;
         match identity.content {
@@ -510,48 +396,4 @@ impl SlackBot {
             SlackApiContent::Err(err) => error!("Failed to delete: {:?}", err)
         }
     }
-
-}
-
-struct HeadersMiddleware {
-    token: String,
-}
-
-#[surf::utils::async_trait]
-impl Middleware for HeadersMiddleware {
-    async fn handle(
-        &self,
-        mut req: Request,
-        client: Client,
-        next: Next<'_>,
-    ) -> Result<Response, surf::Error> {
-        req.insert_header(
-            surf::http::headers::AUTHORIZATION,
-            format!("Bearer {}", self.token),
-        );
-        req.insert_header(surf::http::headers::CONTENT_TYPE, format!("{}; charset=utf-8", surf::http::mime::JSON));
-        let res = next.run(req, client).await?;
-        Ok(res)
-    }
-}
-
-fn yes() -> bool {
-    let mut buff = String::new();
-    match std::io::stdin().read_line(&mut buff) {
-        Ok(_bytes) => {
-            if buff.to_ascii_lowercase().trim() == "y".to_string() {
-                true
-            } else { false }
-        }
-        Err(_err) => { false },
-    }
-}
-
-fn create_client(token: String) -> Client {
-    let headers = HeadersMiddleware { token };
-    let mut client = Client::new()
-        .with(Logger::new())
-        .with(headers);
-    client.set_base_url(Url::parse(SLACK_API_URL).unwrap());
-    client
 }
