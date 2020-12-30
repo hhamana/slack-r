@@ -16,7 +16,7 @@ use surf::{
 
 use crate::{
     API_KEY_ENV_NAME, CONFIG_FILE_PATH_ENV_VAR, DEFAULT_CONFIG_PATH, SLACK_API_URL, SlackRError, 
-    api::{self, SlackApiContent, SlackApiError, SlackApiWarning}, 
+    api::{self, SlackApiContent, SlackApiError, SlackApiWarning},
     convert_date_string_to_local
 };
 
