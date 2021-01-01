@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 use serde::{Deserialize, Serialize};
-
+use crate::{CONFIG_FILE_PATH_ENV_VAR, DEFAULT_CONFIG_PATH, SlackRError};
 use super::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

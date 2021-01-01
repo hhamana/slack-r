@@ -1,21 +1,17 @@
 use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, Weekday};
 use log::{debug, error, info, warn};
 use rand::seq::SliceRandom;
-use surf::{
-    middleware::{Logger, Middleware, Next},
-    Client, Request, Response, Url,
-};
+use surf::Client;
 
 use crate::{
-    API_KEY_ENV_NAME, CONFIG_FILE_PATH_ENV_VAR, DEFAULT_CONFIG_PATH, SLACK_API_URL, SlackRError, 
+    API_KEY_ENV_NAME,
     api::{self, SlackApiContent, SlackApiError, SlackApiWarning},
     convert_date_string_to_local
 };
 
 mod config;
 use config::BotConfig;
-mod utils;
-use utils::yes;
+mod client;
 
 pub struct SlackBot {
     client: Client,
@@ -44,7 +40,7 @@ impl SlackBot {
         };
 
         debug!("Creating Internet client");
-        let client = utils::create_client(token);
+        let client = client::create_client(token);
         debug!("Bot setup complete");
         SlackBot { client, config }
     }
@@ -277,8 +273,8 @@ impl SlackBot {
             },
             SlackApiContent::Err(slack_err) => {
                 match slack_err.error {
-                    api::SlackApiError::users_not_found => error!("User email was not found, or the bot doesn't have access to it."),
-                    api::SlackApiError::missing_scope => error!("Usage of lookup by email requires the Slack `users:read.email` scope. Please verify bot permissions."),
+                    SlackApiError::users_not_found => error!("User email was not found, or the bot doesn't have access to it."),
+                    SlackApiError::missing_scope => error!("Usage of lookup by email requires the Slack `users:read.email` scope. Please verify bot permissions."),
                     _ => error!("{:?}", slack_err.error)
                 };
             }
@@ -333,7 +329,7 @@ impl SlackBot {
     }
 
     pub async fn add_token(&mut self, token: &str) {
-        let new_client = utils::create_client(token.to_string());
+        let new_client = client::create_client(token.to_string());
         let request = api::Empty{};
         let identity = api::call_endpoint(api::AuthTestEndpoint, &request, &new_client).await;
         match identity.content {
@@ -395,5 +391,19 @@ impl SlackBot {
             SlackApiContent::Ok(_empty) => println!("Deleted message with id {}", id),
             SlackApiContent::Err(err) => error!("Failed to delete: {:?}", err)
         }
+    }
+}
+
+
+
+pub(crate) fn yes() -> bool {
+    let mut buff = String::new();
+    match std::io::stdin().read_line(&mut buff) {
+        Ok(_bytes) => {
+            if buff.to_ascii_lowercase().trim() == "y".to_string() {
+                true
+            } else { false }
+        }
+        Err(_err) => { false },
     }
 }

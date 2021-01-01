@@ -1,5 +1,11 @@
 use super::*;
 
+use surf::{
+    middleware::{Logger, Middleware, Next},
+    Request, Response, Url,
+};
+use crate::SLACK_API_URL;
+
 struct HeadersMiddleware {
     token: String,
 }
@@ -19,18 +25,6 @@ impl Middleware for HeadersMiddleware {
         req.insert_header(surf::http::headers::CONTENT_TYPE, format!("{}; charset=utf-8", surf::http::mime::JSON));
         let res = next.run(req, client).await?;
         Ok(res)
-    }
-}
-
-pub(crate) fn yes() -> bool {
-    let mut buff = String::new();
-    match std::io::stdin().read_line(&mut buff) {
-        Ok(_bytes) => {
-            if buff.to_ascii_lowercase().trim() == "y".to_string() {
-                true
-            } else { false }
-        }
-        Err(_err) => { false },
     }
 }
 
