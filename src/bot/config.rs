@@ -12,14 +12,18 @@ use super::*;
 pub struct BotConfig {
     /// The list of members ids that can be selected. Adds all of the channel when added to a channel.
     pub members: Vec<String>,
+    /// Members that have been selected.
+    pub selected: Vec<String>,
     /// The channel on which this bot will post. Single channel per config. 
     /// You may  have a different config file for different channels, although this behaviour is untested yet.
     pub channel: String,
     /// As input only accepts dates, this is the time that will be applied to the input date.
     pub target_time: NaiveTime,
     /// Possible offset for the actual time at which the message will be posted, to give some leeway for the joke to be prepared. 
-    /// Set to 0 to schedule at the target time.
-    pub target_time_schedule_offset: i64,
+    /// How many days in avance to schedule the post, relative to the target time.
+    pub advance_days: i64,
+    /// On the day from `advance_days`, post at this time.
+    pub post_time: NaiveTime,
     /// Delay for "instant" schedules, such as the reroll. Defaults to 45s.
     pub instant_delay: i64,
     /// Slack API token for the bot.
@@ -32,9 +36,11 @@ impl Default for BotConfig {
     fn default() -> Self {
         BotConfig {
             members: Vec::new(),
+            selected: Vec::new(),
             channel: String::new(),
-            target_time: NaiveTime::from_hms(11, 15, 0),
-            target_time_schedule_offset: Duration::hours(23).num_seconds(),
+            target_time: NaiveTime::from_hms(11, 30, 0),
+            post_time: NaiveTime::from_hms(11, 30, 0),
+            advance_days: 1,
             instant_delay: 45,
             token: None,
             id: String::new()

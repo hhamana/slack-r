@@ -31,7 +31,7 @@ impl SlackBot {
             std::env::var(API_KEY_ENV_NAME),
             &config.token,
             no_panic) {
-                // 3-way pattern matching to allow for many ways to get the env var.
+                // 3-way pattern matching to allow for many ways to get the token.
                 // Isn't this beautiful?
                 (Ok(var), _, _) => { debug!("Found token in {}", API_KEY_ENV_NAME); var},
                 (_, Some(var), _ ) => { debug!("Found token in config"); var.clone()},
@@ -105,32 +105,33 @@ impl SlackBot {
         api::schedule_message(&self.client, &request).await
     }
 
-    fn date_with_set_time(&self) -> DateTime<Local> {
-        Local::today().and_time(self.config.target_time).expect("Couldn't generate time")
-    }
-
-    fn get_post_at_date(&self, target_date: &DateTime<Local>, post_at_arg: Option<&str>) -> DateTime<Local> {
-        if let Some(post_at) = post_at_arg {
-            debug!("A target time was specified");
-            let time = self.date_with_set_time();
-            let schedule_time = convert_date_string_to_local(&post_at, &time).unwrap();
-            match schedule_time.cmp(target_date) {
+    fn get_post_at_date(&self, target_date: &DateTime<Local>, post_on_day_arg: Option<&str>) -> DateTime<Local> {
+        if let Some(post_on_day) = post_on_day_arg {
+            debug!("`post_on_day` was specified");
+            let today_with_post_time = today_with_set_time(self.config.post_time);
+            let post_at_time = convert_date_string_to_local(&post_on_day, &today_with_post_time).unwrap();
+            match post_at_time.cmp(target_date) {
                 std::cmp::Ordering::Equal |
                 std::cmp::Ordering::Greater => {
                     panic!("Scheduled time is after the target day!");
                 },
                 std::cmp::Ordering::Less => {
-                    info!("valid target time specified: {}", schedule_time);
-                    return schedule_time
+                    info!("Valid post_at datetime specified: {}", post_at_time);
+                    return post_at_time
                 }
             }
         };
         debug!("Getting schedule time from target");
-        let unfiltered = *target_date - Duration::seconds(self.config.target_time_schedule_offset);
+        let unfiltered = *target_date - Duration::days(self.config.advance_days);
         match unfiltered.date().weekday() {
             Weekday::Sun => {
                 warn!("Offset falling on a sunday, shifting schedule to the Friday before");
                 unfiltered - Duration::days(2)
+            },
+            // As advance_day can now be anything, it might fall on a saturday if target time falls on monday and offset 2 days.
+            Weekday::Sat => {
+                warn!("Offset falling on a saturday, shifting schedule to the Friday before");
+                unfiltered - Duration::days(1)
             },
             _ => unfiltered
         }
@@ -138,7 +139,7 @@ impl SlackBot {
     }
 
     fn get_target_date(&self, input_date_arg: Option<&str>) -> DateTime<Local> {
-        let today_with_target_time = self.date_with_set_time();
+        let today_with_target_time = today_with_set_time(self.config.target_time);
 
         let unfiltered = match input_date_arg {
             Some(input_date_str) => {
@@ -347,9 +348,13 @@ impl SlackBot {
             .expect("Unable to parse target time");
     }        
 
-    pub fn add_offset_time(&mut self, offset: &str) {
-        self.config.target_time_schedule_offset = offset.parse::<i64>()
+    pub fn add_post_time(&mut self, offset: &str) {
+        self.config.post_time = NaiveTime::parse_from_str(offset, "%H:%M:%S")
             .expect("Unable to parse offset time");
+    }
+
+    pub fn set_post_day_offset(&mut self, offset: &str) {
+        self.config.advance_days =  offset.parse::<i64>().expect("Day offset not parsable to i64");
     }
 
     pub async fn check_scheduled_messages(self) {
@@ -394,6 +399,11 @@ impl SlackBot {
     }
 }
 
+
+
+fn today_with_set_time(time: NaiveTime) -> DateTime<Local> {
+    Local::today().and_time(time).expect("Couldn't generate time")
+}
 
 
 pub(crate) fn yes() -> bool {

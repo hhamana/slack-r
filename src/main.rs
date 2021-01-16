@@ -70,18 +70,23 @@ fn main() {
         );
 
     let add_times_command = SubCommand::with_name("time")
-        .about("Sets the target time and/or scheduling offset. By default, target time is set at 11:30 locally, with an offset of 23 hours.")
-        .long_about(" This way, when the joke is invoked for the day 2020-12-01, it is calculated to be at 11:15, and schedule to post the message 23 hours before the target time. 
-        The joke coimmand will abort operation if the current time is past the time to schedule.")
+        .about("Sets the target time, post_at time, day offset. By default, both target time and post_at times are set to local 11:30 (AM).")
+        .long_about("`target` time is the base from which the scheduled dateand time will be calculated. Set the `day_offset` to post one or more days before, at the time of `post_at`
+        The joke command will abort operation if the current time is past the time to schedule.")
         .arg(Arg::with_name("target")
             .long("target")
             .takes_value(true)
             .help("Set the target time, which will be added to process the input date.")
         )
-        .arg(Arg::with_name("offset")
-            .long("offset")
+        .arg(Arg::with_name("post_at")
+            .long("post_at")
             .takes_value(true)
-            .help("Set the offset to apply for the target time.")
+            .help("Set the time at which to post at on the scheduled day.")
+        )
+        .arg(Arg::with_name("day_offset")
+            .long("day_offset")
+            .takes_value(true)
+            .help("Sets how many days in advance to schedule relative to the target time.")
         );
 
     let add_command = SubCommand::with_name("add")
@@ -214,9 +219,13 @@ fn main() {
                     if let Some(target_time) = target_time_opt {
                         bot.add_target_time(target_time);
                     }
-                    let offset_opt = times_args.value_of("target");
-                    if let Some(offset) = offset_opt {
-                        bot.add_offset_time(offset);
+                    let post_at_opt = times_args.value_of("post_at");
+                    if let Some(offset) = post_at_opt {
+                        bot.add_post_time(offset);
+                    }
+                    let day_offset_opt = times_args.value_of("day_offset");
+                    if let Some(offset) = day_offset_opt {
+                        bot.set_post_day_offset(offset);
                     }
                 }
                 _ => panic!("Can only add channel, token or individual members! See `slack-r help add`"),
