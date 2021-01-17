@@ -10,6 +10,36 @@ This is a CLI to manage the bot. The bot is fundamentally nothing more than the 
 Install, by downloading a release and putting it on your path, or invoking the executable portably.
 See `slack-r help` for commands, and if you have the Rust tooling cargo, you can use `cargo doc --open` for some extra docs comment from the source code.
 
+Here is the output of `slack-r help` as of 0.1.4, showing the high-level commands available. many subcommands have options with further help.
+```
+Slack-R 0.1.4
+Exposes command lines to control the Slack-R bot.
+
+USAGE:
+    slack-r.exe [FLAGS] [SUBCOMMAND]
+
+FLAGS:
+    -h, --help       Prints help information
+    -v               Sets the level of verbosity, the more "v" the more verbose, up to -vvv.
+    -V, --version    Prints version information
+
+SUBCOMMANDS:
+    add          Adds various data to config, possibly fetching data from Slack
+    cancel       Cancel scheduled messages from their IDs.
+    config       Configures the bot in bulk isntead of using separate adds
+    help         Prints this message or the help of the given subcommand(s)
+    joke         Notifies who has to find a joke.
+    reroll       Reroll for the next day
+    scheduled    Prints all scheduled messages for the bot.
+```
+
+### Verbosity
+Verbosity has 3 levels, which technically are log levels.
+When unset, it refers to ERROR level, so you will always see error messages.  
+A single -v will trigger the WARN lavel, giving some information about some maybe unexpected behavior (such as weekend shifting).  
+With -vv, you get INFO level, giving more information about which Slack endpoints it is calling, as well as how it processes times.
+At -vvv, this is DEBUG level. Here, most functions will trigger some sort of log, so you can get a view of how everything goes through the system. Debug-only logs also show the module path of the code calling the log. It also triggers extensive logs from dependencies 
+
 ## Setup through commands
 ### add token <token>
 First things first, add the Slack API token to configuration.

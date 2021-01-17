@@ -8,10 +8,9 @@ mod api;
 mod bot;
 use bot::SlackBot;
 
-const AUTHOR: &'static str = "Hamana Hadrien. <hamana.hadrien@gmail.com>";
 const API_KEY_ENV_NAME: &'static str = "SLACK_API_KEY";
 const BOT_NAME: &'static str = "Slack-R";
-const CLI_VERSION: &'static str = "0.1";
+const CLI_VERSION: &'static str = "0.1.4";
 const CONFIG_FILE_PATH_ENV_VAR: &'static str = "SLACK_R_CONFIG_FILE_PATH";
 const DEFAULT_CONFIG_PATH: &'static str = "./config.json";
 #[cfg(not(debug_assertions))]
@@ -143,7 +142,6 @@ fn main() {
         );
     let app = App::new(BOT_NAME)
         .version(CLI_VERSION)
-        .author(AUTHOR)
         .about("Exposes command lines to control the Slack-R bot.")
         .arg(Arg::with_name("v")
             .short("v")
