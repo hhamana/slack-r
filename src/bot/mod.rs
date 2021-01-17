@@ -370,31 +370,33 @@ impl SlackBot {
         messages.iter().any(|mess| mess.date() == date.date())
     }
     
-    pub async fn cancel_scheduled_message(self, id: &str) {
+    pub async fn cancel_scheduled_message(self, id_list: Vec<&str>) {
         let messages = api::list_scheduled_messages(&self.client, &self.config.channel).await;
         debug!("Filtering from {} messages", messages.len());
-        let lookup = messages.iter().find(|mess| mess.id == id);
-        let message = match lookup {
-            Some(mess) => {
-                println!("Found message: {}", mess);
-                println!("Please confirm cancellation: Y/n");
-                if yes() {
-                    mess
-                } else {
-                    warn!("Scheduled message kept.");
-                    return;
+        for id in id_list {
+            let lookup = messages.iter().find(|mess| mess.id == id);
+            let message = match lookup {
+                Some(mess) => {
+                    println!("Found message: {}", mess);
+                    println!("Please confirm cancellation: Y/n");
+                    if yes() {
+                        mess
+                    } else {
+                        warn!("Scheduled message kept.");
+                        continue;
+                    }
                 }
+                None => {
+                    error!("No scheduled message with id \"{}\"", id);
+                    continue;
+                }
+            };
+            let request = api::DeleteScheduledMessageRequest::new(&self.config.channel, &message.id);
+            let response = api::call_endpoint(api::DeleteScheduledMessageEndpoint, &request, &self.client).await;
+            match response.content {
+                SlackApiContent::Ok(_empty) => println!("Deleted message with id {}", id),
+                SlackApiContent::Err(err) => error!("Failed to delete: {:?}", err)
             }
-            None => {
-                error!("No scheduled message with id \"{}\"", id);
-                return;
-            }
-        };
-        let request = api::DeleteScheduledMessageRequest::new(&self.config.channel, &message.id);
-        let response = api::call_endpoint(api::DeleteScheduledMessageEndpoint, &request, &self.client).await;
-        match response.content {
-            SlackApiContent::Ok(_empty) => println!("Deleted message with id {}", id),
-            SlackApiContent::Err(err) => error!("Failed to delete: {:?}", err)
         }
     }
 }

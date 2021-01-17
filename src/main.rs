@@ -100,11 +100,12 @@ fn main() {
         .about("Prints all scheduled messages for the bot.");
     
     let cancel_command = SubCommand::with_name("cancel")
-        .about("Cancel a scheduled message from the ID.")
-        .long_about("Cancel a scheduled message from the ID.\nThe ID is printed in succesful `joke` comand execution.\nAlternatively, you can get all scheduled messages IDs by using the `scheduled` command.\nWill ask for confirmation.")
+        .about("Cancel scheduled messages from their IDs.")
+        .long_about("Cancel scheduled messages from their IDs.\nThe ID is printed in succesful `joke` comand execution.\nAlternatively, you can get all scheduled messages IDs by using the `scheduled` command.\nWill ask for confirmation.")
         .arg(Arg::with_name("id")
             .takes_value(true)
             .required(true)
+            .multiple(true)
             .help("Define the message ID to cancel.")
         );
 
@@ -193,8 +194,8 @@ fn main() {
         },
         ("cancel", Some(args)) => {
             debug!("Cancel subcommand");
-            let id = args.value_of("id").unwrap();
-            task::block_on(bot.cancel_scheduled_message(id));
+            let id_values = args.values_of("id").unwrap().collect();
+            task::block_on(bot.cancel_scheduled_message(id_values));
         },
         ("add", Some(args)) => {
             match args.subcommand() {
