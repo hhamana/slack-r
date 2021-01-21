@@ -107,13 +107,13 @@ impl BotConfig {
             Ok(bytes_read) => debug!("Read {} bytes from the file.", bytes_read),
             Err(e) => {
                 warn!("Error reading file: {}. Using default config values instead", e);
-                return Err(SlackRError);
+                return Err(SlackRError::CorruptedConfig);
             }
         };
 
         let config = serde_json::from_str::<BotConfig>(&buf).map_err(|err| {
             warn!("Failed parsing config file. {}", err);
-            SlackRError
+            SlackRError::CorruptedConfig
         })?;
         info!("Successfully read config from file");
         Ok(config)
@@ -127,7 +127,7 @@ impl BotConfig {
         debug!("Serialized BotConfig as {}", json);
         write(&path, json.as_bytes()).map_err(|e| {
             error!("Couldn't write to file at the path {:?}. Error: {}", path, e);
-            SlackRError
+            SlackRError::WriteConfig
         })?;
         info!("Saved config to file {:?}", path);
         Ok(())

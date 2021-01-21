@@ -248,7 +248,13 @@ fn main() {
 }
 
 #[derive(Debug)]
-pub struct SlackRError;
+pub enum SlackRError {
+    TooLate,
+    AlreadyScheduled,
+    NoMemberToSelect,
+    CorruptedConfig,
+    WriteConfig,
+}
 
 /// Takes a date string such as "2020-10-21" and returns a Datetime instance with local timezone and current time.
 /// Returns a String as error, so it can be used to validate while invoking as command line argument too

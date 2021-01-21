@@ -5,6 +5,7 @@ use surf::Client;
 
 use crate::{
     API_KEY_ENV_NAME,
+    SlackRError,
     api::{self, SlackApiContent, SlackApiError, SlackApiWarning},
     convert_date_string_to_local
 };
@@ -47,12 +48,16 @@ impl SlackBot {
     
     pub fn save(self) {
         match self.config.to_file() {
-            Ok(_) => info!("Successfully saved file."),
-            Err(_) => warn!("Couldnt' save file")
+            Ok(_) => info!("Successfully saved config file."),
+            Err(_) => error!("Couldnt' save config file")
         }
     }
 
-    pub async fn joke(self, input_date_arg: Option<&str>, scheduled_day_arg: Option<&str>) {
+    pub async fn joke(
+        self, 
+        input_date_arg: Option<&str>, 
+        scheduled_day_arg: Option<&str>
+    ) -> Result<(String, DateTime<Local>, DateTime<Local>), SlackRError> {
         info!("Processing joke command");        
         let target_date = self.get_target_date(input_date_arg);
         info!("Target datetime: {}.", target_date);
@@ -62,13 +67,13 @@ impl SlackBot {
         
         if post_at <= Local::now() {
             error!("Too late to post for {}!", post_at);
-            return;
+            return Err(SlackRError::TooLate);
         }
         
         debug!("Checking it isn't already scheduled for channel...");
         if self.date_already_been_scheduled(post_at).await {
             error!("This date has already been scheduled. Check with `scheduled` command, and/or cancel with the `delete <ID>` command.");
-            return;
+            return Err(SlackRError::AlreadyScheduled);
         };
         debug!("Nothing scheduled on {}, continuing", post_at);
         
@@ -79,7 +84,7 @@ impl SlackBot {
             },
             None => {
                 error!("No member could be selected!");
-                return;
+                return Err(SlackRError::NoMemberToSelect);
             }
         };
         
@@ -95,6 +100,7 @@ impl SlackBot {
             response.post_at,
             response.scheduled_message_id
         );
+        Ok((member, target_date, response.post_at))
     }
 
     async fn schedule_message(&self, timestamp: i64, message: String) -> api::ScheduleMessageResponse {
@@ -417,5 +423,88 @@ pub(crate) fn yes() -> bool {
             } else { false }
         }
         Err(_err) => { false },
+    }
+}
+
+trait IsWeekday {
+    fn is_weekday(&self) -> bool;
+}
+impl IsWeekday for DateTime<Local> {
+    fn is_weekday(&self) -> bool {   
+        let weekdays = vec![Weekday::Mon, Weekday::Tue, Weekday::Wed, Weekday::Thu, Weekday::Fri];
+        let target_weekday = self.date().weekday();
+        weekdays.contains(&target_weekday)
+    }
+}
+impl IsWeekday for chrono::NaiveDate {
+    fn is_weekday(&self) -> bool {   
+        let weekdays = vec![Weekday::Mon, Weekday::Tue, Weekday::Wed, Weekday::Thu, Weekday::Fri];
+        let target_weekday = self.weekday();
+        weekdays.contains(&target_weekday)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use chrono::prelude::*;
+    use async_std::task;
+    use client::create_client;
+    
+    fn custom_bot(target_time_str: &str, post_time_str: &str) -> SlackBot {
+        let target_time = target_time_str.parse::<NaiveTime>().unwrap();
+        let post_time = post_time_str.parse::<NaiveTime>().unwrap();
+
+        let config = BotConfig {
+            members: vec!["user_1".to_string(), "user_2".to_string(), "user3".to_string()],
+            selected: vec![],
+            channel: "test_channel".to_string(),
+            target_time,
+            post_time,
+            advance_days: 1,
+            instant_delay: 45,
+            token: Some("test_token".to_string()),
+            id: "test_bot_id".to_string()
+        };
+        let client = create_client("test_token".to_string());
+        SlackBot { client, config }
+    }
+
+    #[test]
+    fn it_works() {
+        assert!(1+1 == 2)
+    }
+    
+    #[test]
+    fn get_target_date_default() {
+        let bot = custom_bot("11:30:00", "11:30:00");
+        assert_eq!(bot.config.target_time, NaiveTime::from_hms(11, 30, 00));
+        let target_date_str = Some("2021-12-31");
+        // let post_on_day_arg = None;
+        let target_date = bot.get_target_date(target_date_str);
+        let expected = Local.ymd(2021, 12, 31).and_hms(11, 30, 00);
+        assert_eq!(target_date, expected)
+    }
+
+    #[test]
+    fn test_joke_success() {
+        let post_time_config = NaiveTime::from_hms(1, 2, 3);
+        let bot = custom_bot("02:03:04", &post_time_config.to_string());
+        let mut next_weekday = Local::now().date().naive_local().succ();
+        while !next_weekday.is_weekday() {
+            next_weekday = next_weekday.succ();
+        };
+
+        
+        let tomorrow = Local::now().date().naive_local().succ();
+        let input_date_arg = tomorrow.to_string();
+        // assert_eq!(input_date_arg, "2021-01-21");
+        let joke = task::block_on(bot.joke(Some(&input_date_arg), None));
+        assert!(joke.is_ok());
+        let (member, target_date, post_at) = joke.unwrap();
+        assert!(target_date.is_weekday());
+        assert!(post_at.is_weekday());
+        assert_eq!(post_at.hour(), post_time_config.hour());
+        assert_eq!(post_at.minute(), post_time_config.minute());
     }
 }
