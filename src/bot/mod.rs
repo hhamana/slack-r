@@ -364,8 +364,9 @@ impl SlackBot {
     }
 
     pub async fn check_scheduled_messages(self) {
-        let messages = api::list_scheduled_messages(&self.client, &self.config.channel).await;
+        let mut messages = api::list_scheduled_messages(&self.client, &self.config.channel).await;
         info!("Printing {} scheduled messages for channel {}", messages.len(), self.config.channel);
+        messages.sort_by(|a, b| a.post_at.cmp(&b.post_at));
         for mess in messages {
             println!("{}", mess);
         }

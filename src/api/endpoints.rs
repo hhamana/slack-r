@@ -325,7 +325,7 @@ pub struct ScheduledMessageObjectRaw {
 pub struct ScheduledMessageObject {
     pub id: String,
     channel_id: String,
-    post_at: DateTime<Local>,
+    pub post_at: DateTime<Local>,
     date_created: DateTime<Local>,
     text: String,
 }
