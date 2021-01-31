@@ -178,9 +178,9 @@ fn main() {
     match matches.subcommand() {
         ("joke", Some(args)) => {
             debug!("Joke subcommand");
-            let input_date_arg = args.value_of("day");
+            let input_date_args = args.values_of("day").unwrap_or_default().collect();
             let scheduled_day_arg = args.value_of("post_on");
-            task::block_on(bot.joke(input_date_arg, scheduled_day_arg));
+            task::block_on(bot.joke(input_date_args, scheduled_day_arg));
         },
         ("reroll", Some(_args)) => {
             debug!("Reroll subcommand");
