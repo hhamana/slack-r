@@ -28,14 +28,18 @@ fn main() {
             .takes_value(true)
             .multiple(true)
             .validator(validate_date_input)
-            .help("Select a specific day to include in the message. Format as YYYY-MM-DD. Only dates in the future are allowed. Defaults to tomorrow."))
+            .help("Select a specific day to include in the message. Format as YYYY-MM-DD. Only dates in the future are allowed. Defaults to tomorrow. Can accept several dates in a single run"))
         .arg(Arg::with_name("post_on")
             .short("p")
             .long("post_on")
             .takes_value(true)
             .multiple(false)
             .validator(validate_date_input)
-            .help("Select a specific day to schedule the message. Format as YYYY-MM-DD. Only dates in the future but before the --day argument allowed. Default to be calculated before the target day, before weekends. This arg allows overriding.")
+            .help("Select a specific day to schedule the message. 
+Format as YYYY-MM-DD. Only dates in the future but before the --day argument allowed. 
+Default to be calculated before the target day, before weekends. 
+This arg allows overriding of the auto-calculated.
+Currently unspecified behavior with several --day. Use only one when specificying the post date.")
         );
     let reroll_command = SubCommand::with_name("reroll")
         .about("Reroll for the next day")
