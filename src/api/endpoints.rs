@@ -290,6 +290,7 @@ pub async fn list_scheduled_messages(client: &Client, channel: &str) -> Vec<Sche
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScheduledMessagesListRequest {
     channel: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     cursor: Option<String>,
     // latest: Option<i64>,
     // limit: Option<u64>,
