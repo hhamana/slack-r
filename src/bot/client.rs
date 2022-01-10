@@ -1,10 +1,10 @@
 use super::*;
-
+use crate::SLACK_API_URL;
+use std::convert::TryInto;
 use surf::{
     middleware::{Logger, Middleware, Next},
-    Request, Response, Url,
+    Config, Request, Response, Url,
 };
-use crate::SLACK_API_URL;
 
 struct HeadersMiddleware {
     token: String,
@@ -22,7 +22,10 @@ impl Middleware for HeadersMiddleware {
             surf::http::headers::AUTHORIZATION,
             format!("Bearer {}", self.token),
         );
-        req.insert_header(surf::http::headers::CONTENT_TYPE, format!("{}; charset=utf-8", surf::http::mime::JSON));
+        req.insert_header(
+            surf::http::headers::CONTENT_TYPE,
+            format!("{}; charset=utf-8", surf::http::mime::JSON),
+        );
         let res = next.run(req, client).await?;
         Ok(res)
     }
@@ -30,9 +33,9 @@ impl Middleware for HeadersMiddleware {
 
 pub(crate) fn create_client(token: String) -> Client {
     let headers = HeadersMiddleware { token };
-    let mut client = Client::new()
-        .with(Logger::new())
-        .with(headers);
-    client.set_base_url(Url::parse(SLACK_API_URL).unwrap());
-    client
+    let client: Client = Config::new()
+        .set_base_url(Url::parse(SLACK_API_URL).unwrap())
+        .try_into()
+        .unwrap();
+    client.with(Logger::new()).with(headers)
 }

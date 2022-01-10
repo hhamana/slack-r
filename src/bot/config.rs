@@ -1,12 +1,12 @@
+use super::*;
+use crate::{SlackRError, CONFIG_FILE_PATH_ENV_VAR, DEFAULT_CONFIG_PATH};
+use serde::{Deserialize, Serialize};
 use std::{
     env,
     fs::{write, File},
     io::{self, Read},
     path::PathBuf,
 };
-use serde::{Deserialize, Serialize};
-use crate::{CONFIG_FILE_PATH_ENV_VAR, DEFAULT_CONFIG_PATH, SlackRError};
-use super::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BotConfig {
@@ -14,12 +14,12 @@ pub struct BotConfig {
     pub members: Vec<String>,
     /// Members that have been selected.
     pub selected: Vec<String>,
-    /// The channel on which this bot will post. Single channel per config. 
+    /// The channel on which this bot will post. Single channel per config.
     /// You may  have a different config file for different channels, although this behaviour is untested yet.
     pub channel: String,
     /// As input only accepts dates, this is the time that will be applied to the input date.
     pub target_time: NaiveTime,
-    /// Possible offset for the actual time at which the message will be posted, to give some leeway for the joke to be prepared. 
+    /// Possible offset for the actual time at which the message will be posted, to give some leeway for the joke to be prepared.
     /// How many days in avance to schedule the post, relative to the target time.
     pub advance_days: i64,
     /// On the day from `advance_days`, post at this time.
@@ -43,21 +43,24 @@ impl Default for BotConfig {
             advance_days: 1,
             instant_delay: 45,
             token: None,
-            id: String::new()
+            id: String::new(),
         }
     }
 }
 
 impl BotConfig {
     pub fn new() -> BotConfig {
-        info!("Reading config path from {} env var", CONFIG_FILE_PATH_ENV_VAR);
+        info!(
+            "Reading config path from {} env var",
+            CONFIG_FILE_PATH_ENV_VAR
+        );
         let path = Self::get_config_path();
         debug!("Got path");
         match File::open(&path) {
             Ok(file) => {
                 debug!("Config file already exists at the path. Setting up from it.");
                 BotConfig::from_file(file).unwrap_or_default()
-            },
+            }
             Err(err) => {
                 debug!("Error opening file: {}", err);
                 // try to output a helpful message
@@ -77,7 +80,7 @@ impl BotConfig {
             }
         }
     }
-    
+
     /// Gets the path to save/read the config file from either the environnment variable if set, or Default
     pub fn get_config_path() -> PathBuf {
         match env::var(CONFIG_FILE_PATH_ENV_VAR) {
@@ -106,7 +109,10 @@ impl BotConfig {
         match file.read_to_string(&mut buf) {
             Ok(bytes_read) => debug!("Read {} bytes from the file.", bytes_read),
             Err(e) => {
-                error!("Error reading file: {}. Using default config values instead", e);
+                error!(
+                    "Error reading file: {}. Using default config values instead",
+                    e
+                );
                 return Err(SlackRError::CorruptedConfig);
             }
         };
@@ -120,13 +126,16 @@ impl BotConfig {
     }
 
     // Writes config to file.
-    pub fn to_file(self) -> Result<(), SlackRError> {
+    pub fn to_file(&self) -> Result<(), SlackRError> {
         let path = Self::get_config_path();
         debug!("Writing to path {:?}", path);
         let json = serde_json::to_string_pretty(&self).expect("Couldn't serialize BotConfig");
         debug!("Serialized BotConfig as {}", json);
         write(&path, json.as_bytes()).map_err(|e| {
-            error!("Couldn't write to file at the path {:?}. Error: {}", path, e);
+            error!(
+                "Couldn't write to file at the path {:?}. Error: {}",
+                path, e
+            );
             SlackRError::WriteConfig
         })?;
         info!("Saved config to file {:?}", path);

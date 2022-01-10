@@ -7,13 +7,12 @@ impl SlackEndpoint for ScheduleMessageEndpoint {
     type Request = ScheduleMessageRequest;
     type Response = ScheduleMessageResponseRaw;
 
-    fn endpoint_url(&self) -> &str { 
+    fn endpoint_url(&self) -> &str {
         "chat.scheduleMessage"
     }
-    fn method(&self) -> HttpVerb { 
+    fn method(&self) -> HttpVerb {
         HttpVerb::POST
     }
-    
 }
 
 pub async fn schedule_message(
@@ -34,9 +33,9 @@ pub struct ScheduleMessageRequest {
 }
 
 impl ScheduleMessageRequest {
-    pub fn new(channel: &String, post_at: i64, text: String) -> Self {
+    pub fn new(channel: &str, post_at: i64, text: String) -> Self {
         ScheduleMessageRequest {
-            channel: channel.clone(),
+            channel: channel.to_string(),
             post_at,
             text,
         }
@@ -60,25 +59,25 @@ pub struct MessageResponse {
     #[serde(rename = "type")]
     type_: String,
     bot_profile: Option<BotProfile>,
-    attachements: Option<Vec<Attachments>>
+    attachements: Option<Vec<Attachments>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BotProfile {
-    id: String, 
+    id: String,
     deleted: bool,
-    name: String, 
+    name: String,
     updated: i64,
     app_id: String,
     icons: Icons,
-    team_id: String
+    team_id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Icons {
     image_36: Option<String>,
     image_48: String,
-    image_72: String
+    image_72: String,
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Attachments {
@@ -151,7 +150,7 @@ pub struct UserObject {
     is_app_user: bool,
     is_invited_user: Option<bool>,
     has_2fa: Option<bool>,
-    locale: Option<String>
+    locale: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -179,13 +178,13 @@ pub struct UserProfile {
     image_192: String,
     image_512: String,
     status_text_canonical: Option<String>,
-    team: Option<String>
+    team: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Team {
     id: String,
-    name: Option<String>
+    name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -193,8 +192,6 @@ pub struct UserLookupResponse {
     pub user: UserObject,
     pub team: Option<Team>,
 }
-
-
 
 #[derive(Debug)]
 pub struct ListMembersEndpoint;
@@ -210,9 +207,15 @@ impl SlackEndpoint for ListMembersEndpoint {
     }
 }
 
-pub async fn list_members_for_channel(client: &Client, channel: &String) -> Result<Vec<String>, SlackApiError> {
+pub async fn list_members_for_channel(
+    client: &Client,
+    channel: &str,
+) -> Result<Vec<String>, SlackApiError> {
     let mut members = Vec::new();
-    let mut request = ListMembersRequestParams {channel: channel.clone(), cursor: None};
+    let mut request = ListMembersRequestParams {
+        channel: channel.to_string(),
+        cursor: None,
+    };
     loop {
         let full_response = call_endpoint(ListMembersEndpoint, &request, client).await;
         match full_response.content {
@@ -229,10 +232,10 @@ pub async fn list_members_for_channel(client: &Client, channel: &String) -> Resu
                         break;
                     };
                 }
-            },
-            SlackApiContent::Err(err) => return Err(err.error)
+            }
+            SlackApiContent::Err(err) => return Err(err.error),
         }
-    };
+    }
     Ok(members)
 }
 
@@ -249,8 +252,14 @@ impl SlackEndpoint for ListScheduledMessagesEndpoint {
     }
 }
 
-pub async fn list_scheduled_messages(client: &Client, channel: &str) -> Vec<ScheduledMessageObject> {
-    let mut request = ScheduledMessagesListRequest { channel: Some(channel.to_string()), ..ScheduledMessagesListRequest::default()};
+pub async fn list_scheduled_messages(
+    client: &Client,
+    channel: &str,
+) -> Vec<ScheduledMessageObject> {
+    let mut request = ScheduledMessagesListRequest {
+        channel: Some(channel.to_string()),
+        ..ScheduledMessagesListRequest::default()
+    };
     let mut all_responses = Vec::new();
 
     loop {
@@ -260,7 +269,7 @@ pub async fn list_scheduled_messages(client: &Client, channel: &str) -> Vec<Sche
                 let page_objects_iterator = response
                     .scheduled_messages
                     .iter()
-                    .map(|element| ScheduledMessageObject::from(element));
+                    .map(ScheduledMessageObject::from);
                 all_responses.extend(page_objects_iterator);
                 debug!("Added to total, {} items", all_responses.len());
                 if let Some(metadata) = full_response.response_metadata {
@@ -274,20 +283,20 @@ pub async fn list_scheduled_messages(client: &Client, channel: &str) -> Vec<Sche
                         break;
                     };
                 }
-            },
+            }
             SlackApiContent::Err(err) => {
                 error!("{:?}", err);
                 break;
             }
         }
-    };
+    }
 
     debug!("Total {} scheduled message fetched", all_responses.len());
     all_responses
 }
 
 // List Of Pending Scheduled Messages
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct ScheduledMessagesListRequest {
     channel: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -295,17 +304,6 @@ pub struct ScheduledMessagesListRequest {
     // latest: Option<i64>,
     // limit: Option<u64>,
     // oldest: Option<i64>,
-}
-impl Default for ScheduledMessagesListRequest {
-    fn default() -> Self {
-        ScheduledMessagesListRequest {
-            channel: None,
-            cursor: None,
-            // latest: None,
-            // limit: None,
-            // oldest: None,
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -336,9 +334,12 @@ impl std::fmt::Display for ScheduledMessageObject {
         write!(
             f,
             "ID: {}, created {}, scheduled for {} - #{}:  {}",
-            self.id, self.date_created.to_rfc3339(), self.post_at.to_rfc3339(), self.channel_id,  self.text
-            // "{}: {} - {} (Created at {})",
-            // self.post_at, self.channel_id, self.text, self.date_created
+            self.id,
+            self.date_created.to_rfc3339(),
+            self.post_at.to_rfc3339(),
+            self.channel_id,
+            self.text // "{}: {} - {} (Created at {})",
+                      // self.post_at, self.channel_id, self.text, self.date_created
         )
     }
 }
@@ -389,9 +390,8 @@ impl SlackEndpoint for JoinConversationEndpoint {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JoinConversationRequest {
-    pub channel: String
+    pub channel: String,
 }
-
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JoinConversationResponse {
@@ -400,9 +400,8 @@ pub struct JoinConversationResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Warnings {
-    warnings: Vec<String>
+    warnings: Vec<String>,
 }
-
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelObject {
@@ -413,28 +412,28 @@ pub struct ChannelObject {
     is_im: bool,
     created: i64,
     creator: String,
-    is_archived: bool, 
-    is_general: bool, 
+    is_archived: bool,
+    is_general: bool,
     unlinked: i64,
-    name_normalized: String, 
-    is_shared: bool, 
-    is_ext_shared: bool, 
-    is_org_shared: bool, 
+    name_normalized: String,
+    is_shared: bool,
+    is_ext_shared: bool,
+    is_org_shared: bool,
     pending_shared: Vec<String>,
-    is_pending_ext_shared: bool, 
-    is_member: bool, 
-    is_private: bool, 
-    is_mpim: bool, 
+    is_pending_ext_shared: bool,
+    is_member: bool,
+    is_private: bool,
+    is_mpim: bool,
     topic: ChannelTopic,
     purpose: ChannelPurpose,
-    previous_names: Vec<String>
+    previous_names: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelTopic {
     value: String,
     creator: String,
-    last_set: i64
+    last_set: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -443,7 +442,6 @@ pub struct ChannelPurpose {
     creator: String,
     last_set: i64,
 }
-
 
 #[derive(Debug)]
 pub struct DeleteScheduledMessageEndpoint;
@@ -469,7 +467,7 @@ impl DeleteScheduledMessageRequest {
     pub fn new(channel: &str, id: &str) -> DeleteScheduledMessageRequest {
         DeleteScheduledMessageRequest {
             channel: channel.to_string(),
-            scheduled_message_id: id.to_string()
+            scheduled_message_id: id.to_string(),
         }
     }
 }
@@ -491,10 +489,11 @@ impl SlackEndpoint for AuthTestEndpoint {
     }
 
     fn build_request(&self, client: &Client, _request: &Self::Request) -> surf::RequestBuilder {
-    // override so the empty request doesn't call a GET "/auth.test?"
-        client.get(self.endpoint_url())
-            .header(surf::http::headers::CONTENT_TYPE, format!("{}; charset=utf-8", surf::http::mime::FORM))
-            
+        // override so the empty request doesn't call a GET "/auth.test?"
+        client.get(self.endpoint_url()).header(
+            surf::http::headers::CONTENT_TYPE,
+            format!("{}; charset=utf-8", surf::http::mime::FORM),
+        )
     }
 }
 

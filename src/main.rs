@@ -8,15 +8,15 @@ mod api;
 mod bot;
 use bot::SlackBot;
 
-const API_KEY_ENV_NAME: &'static str = "SLACK_API_KEY";
-const BOT_NAME: &'static str = "Slack-R";
-const CLI_VERSION: &'static str = "0.1.4";
-const CONFIG_FILE_PATH_ENV_VAR: &'static str = "SLACK_R_CONFIG_FILE_PATH";
-const DEFAULT_CONFIG_PATH: &'static str = "./config.json";
+const API_KEY_ENV_NAME: &str = "SLACK_API_KEY";
+const BOT_NAME: &str = "Slack-R";
+const CLI_VERSION: &str = "0.1.4";
+const CONFIG_FILE_PATH_ENV_VAR: &str = "SLACK_R_CONFIG_FILE_PATH";
+const DEFAULT_CONFIG_PATH: &str = "./config.json";
 #[cfg(not(debug_assertions))]
-const SLACK_API_URL: &'static str = "https://slack.com/api/";
+const SLACK_API_URL: &str = "https://slack.com/api/";
 #[cfg(debug_assertions)]
-const SLACK_API_URL: &'static str = "http://localhost:3030";
+const SLACK_API_URL: &str = "http://localhost:3030";
 
 /// Entry point and define command line interface.
 fn main() {
@@ -44,7 +44,7 @@ Currently unspecified behavior with several --day. Use only one when specificyin
     let reroll_command = SubCommand::with_name("reroll")
         .about("Reroll for the next day")
         .help("Reroll for the next day, allowing you to preview the randomly selected name to filter out.");
-    
+
     let add_member_command = SubCommand::with_name("member")
         .about("Adds a member ID to config, taking email as input to lookup Slack ID.")
         .arg(Arg::with_name("email")
@@ -98,10 +98,10 @@ Currently unspecified behavior with several --day. Use only one when specificyin
         .subcommand(add_token_command)
         .subcommand(add_channel_command)
         .subcommand(add_times_command);
-        
-    let scheduled_command = SubCommand::with_name("scheduled")
-        .about("Prints all scheduled messages for the bot.");
-    
+
+    let scheduled_command =
+        SubCommand::with_name("scheduled").about("Prints all scheduled messages for the bot.");
+
     let cancel_command = SubCommand::with_name("cancel")
         .about("Cancel scheduled messages from their IDs.")
         .long_about("Cancel scheduled messages from their IDs.\nThe ID is printed in succesful `joke` comand execution.\nAlternatively, you can get all scheduled messages IDs by using the `scheduled` command.\nWill ask for confirmation.")
@@ -119,38 +119,43 @@ Currently unspecified behavior with several --day. Use only one when specificyin
     let config_command = SubCommand::with_name("config")
         .about("Configures the bot in bulk isntead of using separate adds")
         .long_about(config_long_about.as_str())
-        .arg(Arg::with_name("members")
-            .short("m")
-            .long("members")
-            .takes_value(true)
-            .multiple(true)
-            .validator(validate_email)
-            .help("Adds a list of members"),
+        .arg(
+            Arg::with_name("members")
+                .short("m")
+                .long("members")
+                .takes_value(true)
+                .multiple(true)
+                .validator(validate_email)
+                .help("Adds a list of members"),
         )
-        .arg(Arg::with_name("channel")
-            .short("ch")
-            .long("channel")
-            .takes_value(true)
-            .help("Register the channel to send scheduled messages to.")
+        .arg(
+            Arg::with_name("channel")
+                .short("ch")
+                .long("channel")
+                .takes_value(true)
+                .help("Register the channel to send scheduled messages to."),
         )
-        .arg(Arg::with_name("target_time")
-            .long("target_time")
-            .takes_value(true)
-            .validator(validate_time_input)
-            .help("Register the time at which the message should be sheduled.")
+        .arg(
+            Arg::with_name("target_time")
+                .long("target_time")
+                .takes_value(true)
+                .validator(validate_time_input)
+                .help("Register the time at which the message should be sheduled."),
         )
-        .arg(Arg::with_name("token")
-            .long("token")
-            .takes_value(true)
-            .help("Registers the token in config file instead of env var.")
+        .arg(
+            Arg::with_name("token")
+                .long("token")
+                .takes_value(true)
+                .help("Registers the token in config file instead of env var."),
         );
     let app = App::new(BOT_NAME)
         .version(CLI_VERSION)
         .about("Exposes command lines to control the Slack-R bot.")
-        .arg(Arg::with_name("v")
-            .short("v")
-            .multiple(true)
-            .help("Sets the level of verbosity, the more \"v\" the more verbose, up to -vvv.")
+        .arg(
+            Arg::with_name("v")
+                .short("v")
+                .multiple(true)
+                .help("Sets the level of verbosity, the more \"v\" the more verbose, up to -vvv."),
         )
         .subcommand(joke_command)
         .subcommand(reroll_command)
@@ -185,37 +190,37 @@ Currently unspecified behavior with several --day. Use only one when specificyin
             let input_date_args = args.values_of("day").unwrap_or_default().collect();
             let scheduled_day_arg = args.value_of("post_on");
             task::block_on(bot.joke(input_date_args, scheduled_day_arg));
-        },
+        }
         ("reroll", Some(_args)) => {
             debug!("Reroll subcommand");
             task::block_on(bot.reroll());
-        },
+        }
         ("scheduled", _) => {
             debug!("Scheduled subcommand");
             task::block_on(bot.check_scheduled_messages());
-        },
+        }
         ("cancel", Some(args)) => {
             debug!("Cancel subcommand");
             let id_values = args.values_of("id").unwrap().collect();
             task::block_on(bot.cancel_scheduled_message(id_values));
-        },
+        }
         ("add", Some(args)) => {
             match args.subcommand() {
                 ("member", Some(member_args)) => {
                     debug!("Add Member subcommand");
                     let email = member_args.value_of("email").unwrap();
                     task::block_on(bot.add_member_from_email(email));
-                },
+                }
                 ("token", Some(token_args)) => {
                     debug!("Add Token subcommand");
                     let token = token_args.value_of("token").unwrap();
                     task::block_on(bot.add_token(token));
-                },
+                }
                 ("channel", Some(channel_args)) => {
                     debug!("Add Channel subcommand");
                     let channel = channel_args.value_of("channel").unwrap();
                     task::block_on(bot.add_channel(channel));
-                },
+                }
                 ("time", Some(times_args)) => {
                     debug!("Add times subcommand");
                     let target_time_opt = times_args.value_of("target");
@@ -231,21 +236,23 @@ Currently unspecified behavior with several --day. Use only one when specificyin
                         bot.set_post_day_offset(offset);
                     }
                 }
-                _ => panic!("Can only add channel, token or individual members! See `slack-r help add`"),
+                _ => panic!(
+                    "Can only add channel, token or individual members! See `slack-r help add`"
+                ),
             }
             bot.save();
-        },
+        }
         ("config", Some(args)) => {
             debug!("Config subcommand");
-            let members = match args.values_of("members") {
-                Some(members_val) => Some(members_val.map(|s| s.to_string()).collect()),
-                None => None,
-            };
+            let members = args
+                .values_of("members")
+                .map(|members_val| members_val.map(|s| s.to_string()).collect());
             let channel = args.value_of("channel");
             let token = args.value_of("token");
             let target_time = args.value_of("target_time");
             task::block_on(bot.config(members, channel, token, target_time));
-        },
+        }
+
         _ => panic!("No subcommand matching! See `slack-r help` for available commands."),
     };
     info!("Finished execution");
@@ -269,7 +276,8 @@ fn convert_date_string_to_local(
 ) -> Result<DateTime<Local>, String> {
     let input_plus_time = format!("{} {} {}", input_date, time.time(), time.offset());
     debug!("Processing time input as {}", input_plus_time);
-    let parsed_date = input_plus_time.parse::<DateTime<Local>>()
+    let parsed_date = input_plus_time
+        .parse::<DateTime<Local>>()
         .map_err(|_e| format!("Not a date. Example format: {}", time.naive_local().date(),))?;
     debug!("Date successfully parsed");
     Ok(parsed_date)
@@ -283,8 +291,9 @@ fn validate_date_input(input_date: String) -> Result<(), String> {
     }
     let in_120_days = today + chrono::Duration::days(120);
     if parsed_date >= in_120_days {
-        return Err(
-            format!("Date {} must not be more than 120 days in the future", input_date
+        return Err(format!(
+            "Date {} must not be more than 120 days in the future",
+            input_date
         ));
     }
     debug!("Date confirmed valid");
@@ -298,12 +307,15 @@ fn validate_time_input(input_time: String) -> Result<(), String> {
     }
 }
 
-
 fn validate_email(input_email: String) -> Result<(), String> {
-    // Very naive email validation. 
-    let email_split: Vec<&str> = input_email.split("@").collect();
-    if email_split.len() <= 1 { return Err("Not an email".to_string()) }
-    let domain_split: Vec<&str> = email_split[1].split(".").collect();
-    if domain_split.len() <= 1 { return Err("Not an email".to_string()) }
+    // Very naive email validation.
+    let email_split: Vec<&str> = input_email.split('@').collect();
+    if email_split.len() <= 1 {
+        return Err("Not an email".to_string());
+    }
+    // let domain_split: Vec<&str> = email_split[1].split('.');
+    if email_split[1].split('.').count() <= 1 {
+        return Err("Not an email".to_string());
+    }
     Ok(())
 }
