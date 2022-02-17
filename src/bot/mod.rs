@@ -1,3 +1,5 @@
+mod client;
+mod config;
 use crate::{
     // SlackRError,
     api::{self, SlackApiContent, SlackApiError, SlackApiWarning},
@@ -5,13 +7,26 @@ use crate::{
     API_KEY_ENV_NAME,
 };
 use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, Weekday};
+use config::BotConfig;
 use log::{debug, error, info, warn};
 use rand::seq::SliceRandom;
+use std::fmt::Display;
 use surf::Client;
 
-mod config;
-use config::BotConfig;
-mod client;
+pub struct JokeSuccess {
+    message: String,
+    target_date: DateTime<Local>,
+    post_at: DateTime<Local>,
+    id: String,
+}
+impl Display for JokeSuccess {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_fmt(format_args!(
+            "Message '{}' successully scheduled at {}. Schedule ID: {}",
+            self.message, self.post_at, self.id
+        ))
+    }
+}
 
 pub struct SlackBot {
     client: Client,
@@ -53,14 +68,19 @@ impl SlackBot {
         }
     }
 
-    pub async fn joke(&self, input_date_args: Vec<&str>, scheduled_day_arg: Option<&str>) {
+    pub async fn joke(
+        &self,
+        input_date_args: Vec<&str>,
+        scheduled_day_arg: Option<&str>,
+    ) -> Vec<JokeSuccess> {
         info!("Processing joke command");
         let target_datetimes: Vec<DateTime<Local>> = self.get_target_dates(input_date_args);
         debug!("Target dates: {:?}", target_datetimes);
 
         let already_scheduled_messages =
             api::list_scheduled_messages(&self.client, &self.config.channel).await;
-        let mut messages_to_schedule: Vec<api::ScheduleMessageRequest> = Vec::new();
+        let mut messages_to_schedule: Vec<i64> = Vec::new();
+        let mut scheduled = Vec::new();
 
         for target_date in target_datetimes {
             info!("Target datetime: {}.", target_date);
@@ -95,13 +115,13 @@ impl SlackBot {
             // It is okay to compare timestamps as they both also get the same time assigned.
             if messages_to_schedule
                 .iter()
-                .any(|req| req.post_at == post_at.timestamp())
+                .any(|r_post_at| *r_post_at == post_at.timestamp())
             {
                 error!("Attempting to schedule {} several times.", post_at.date());
                 continue;
                 // return Err(SlackRError::AlreadyScheduled);
             };
-            debug!("Confimed bot duplicating requests");
+            debug!("Confirmed not duplicating requests");
 
             let member = match self.select_random_member() {
                 Some(m) => {
@@ -123,16 +143,18 @@ impl SlackBot {
 
             let request =
                 api::ScheduleMessageRequest::new(&self.config.channel, post_at.timestamp(), text);
-            messages_to_schedule.push(request);
+            messages_to_schedule.push(request.post_at);
+
+            let response = api::schedule_message(&self.client, &request).await;
+            let success = JokeSuccess {
+                message: request.text,
+                target_date: target_date,
+                post_at: response.post_at,
+                id: response.scheduled_message_id,
+            };
+            scheduled.push(success);
         }
-        debug!("Messages to post: {:?}", messages_to_schedule);
-        for message in messages_to_schedule {
-            let response = api::schedule_message(&self.client, &message).await;
-            println!(
-                "Message \"{}\" successully scheduled at {}. Schedule ID: {}",
-                message.text, response.post_at, response.scheduled_message_id
-            );
-        }
+        scheduled
     }
 
     async fn schedule_message(
@@ -552,11 +574,6 @@ mod test {
         };
         let client = create_client("test_token".to_string());
         SlackBot { client, config }
-    }
-
-    #[test]
-    fn it_works() {
-        assert!(1 + 1 == 2)
     }
 
     #[test]

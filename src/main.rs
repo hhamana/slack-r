@@ -1,12 +1,11 @@
+mod api;
+mod bot;
 use async_std::task;
+use bot::SlackBot;
 use chrono::{DateTime, Local};
 use clap::{App, Arg, SubCommand};
 use log::{debug, info, warn};
 use simplelog::{Config, LevelFilter, SimpleLogger};
-
-mod api;
-mod bot;
-use bot::SlackBot;
 
 const API_KEY_ENV_NAME: &str = "SLACK_API_KEY";
 const BOT_NAME: &str = "Slack-R";
