@@ -3,7 +3,7 @@ mod config;
 use crate::{
     // SlackRError,
     api::{self, SlackApiContent, SlackApiError, SlackApiWarning},
-    convert_date_string_to_local,
+    dates::{convert_date_string_to_local, IsWeekday},
     API_KEY_ENV_NAME,
 };
 use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, Weekday};
@@ -516,36 +516,6 @@ pub(crate) fn yes() -> bool {
     }
 }
 
-trait IsWeekday {
-    fn is_weekday(&self) -> bool;
-}
-impl IsWeekday for DateTime<Local> {
-    fn is_weekday(&self) -> bool {
-        let weekdays = vec![
-            Weekday::Mon,
-            Weekday::Tue,
-            Weekday::Wed,
-            Weekday::Thu,
-            Weekday::Fri,
-        ];
-        let target_weekday = self.date().weekday();
-        weekdays.contains(&target_weekday)
-    }
-}
-impl IsWeekday for chrono::NaiveDate {
-    fn is_weekday(&self) -> bool {
-        let weekdays = vec![
-            Weekday::Mon,
-            Weekday::Tue,
-            Weekday::Wed,
-            Weekday::Thu,
-            Weekday::Fri,
-        ];
-        let target_weekday = self.weekday();
-        weekdays.contains(&target_weekday)
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -592,7 +562,7 @@ mod test {
     //     let mut next_weekday = Local::now().date().naive_local().succ();
     //     while !next_weekday.is_weekday() {
     //         next_weekday = next_weekday.succ();
-    //     };
+    //     }
 
     //     let tomorrow = Local::now().date().naive_local().succ();
     //     let input_date_arg = vec![&tomorrow.to_string()];

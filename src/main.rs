@@ -1,9 +1,10 @@
 mod api;
 mod bot;
+mod dates;
 use async_std::task;
 use bot::SlackBot;
-use chrono::{DateTime, Local};
 use clap::{App, Arg, SubCommand};
+use dates::{validate_date_input, validate_time_input};
 use log::{debug, info, warn};
 use simplelog::{Config, LevelFilter, SimpleLogger};
 
@@ -264,46 +265,6 @@ pub enum SlackRError {
     NoMemberToSelect,
     CorruptedConfig,
     WriteConfig,
-}
-
-/// Takes a date string such as "2020-10-21" and returns a Datetime instance with local timezone and current time.
-/// Returns a String as error, so it can be used to validate while invoking as command line argument too
-/// Uses `time` only for its time and offset as template for formatting.
-fn convert_date_string_to_local(
-    input_date: &str,
-    time: &DateTime<Local>,
-) -> Result<DateTime<Local>, String> {
-    let input_plus_time = format!("{} {} {}", input_date, time.time(), time.offset());
-    debug!("Processing time input as {}", input_plus_time);
-    let parsed_date = input_plus_time
-        .parse::<DateTime<Local>>()
-        .map_err(|_e| format!("Not a date. Example format: {}", time.naive_local().date(),))?;
-    debug!("Date successfully parsed");
-    Ok(parsed_date)
-}
-
-fn validate_date_input(input_date: String) -> Result<(), String> {
-    let today = Local::now();
-    let parsed_date = convert_date_string_to_local(&input_date, &today)?;
-    if parsed_date <= today {
-        return Err(format!("Date {} must be in the future", input_date));
-    }
-    let in_120_days = today + chrono::Duration::days(120);
-    if parsed_date >= in_120_days {
-        return Err(format!(
-            "Date {} must not be more than 120 days in the future",
-            input_date
-        ));
-    }
-    debug!("Date confirmed valid");
-    Ok(())
-}
-
-fn validate_time_input(input_time: String) -> Result<(), String> {
-    match chrono::NaiveTime::parse_from_str(&input_time, "%H:%M:%S") {
-        Ok(_v) => Ok(()),
-        Err(e) => Err(format!("{}", e)),
-    }
 }
 
 fn validate_email(input_email: String) -> Result<(), String> {
