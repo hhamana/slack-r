@@ -1352,6 +1352,7 @@ name = "slack-r"
 version = "0.1.4"
 dependencies = [
  "async-std",
+ "async-trait",
  "chrono",
  "clap",
  "futures",

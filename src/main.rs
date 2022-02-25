@@ -2,21 +2,20 @@ mod api;
 mod bot;
 mod dates;
 use async_std::task;
-use bot::SlackBot;
+use bot::{BotConfig, SlackBot};
+
 use clap::{App, Arg, SubCommand};
 use dates::{validate_date_input, validate_time_input};
 use log::{debug, info, warn};
 use simplelog::{Config, LevelFilter, SimpleLogger};
+
+use crate::api::ProdSlackApiClient;
 
 const API_KEY_ENV_NAME: &str = "SLACK_API_KEY";
 const BOT_NAME: &str = "Slack-R";
 const CLI_VERSION: &str = "0.1.4";
 const CONFIG_FILE_PATH_ENV_VAR: &str = "SLACK_R_CONFIG_FILE_PATH";
 const DEFAULT_CONFIG_PATH: &str = "./config.json";
-#[cfg(not(debug_assertions))]
-const SLACK_API_URL: &str = "https://slack.com/api/";
-#[cfg(debug_assertions)]
-const SLACK_API_URL: &str = "http://localhost:3030";
 
 /// Entry point and define command line interface.
 fn main() {
@@ -54,13 +53,13 @@ Currently unspecified behavior with several --day. Use only one when specificyin
             .help("Input the Slack's registered email of the user to add in config. The bot must have `users:read.email` permission")
         );
 
-    let add_token_command = SubCommand::with_name("token")
-        .about("Adds a Slack API token to the config.")
-        .arg(Arg::with_name("token")
-            .required(true)
-            .takes_value(true)
-            .help("Saves the input token to config, so it doesn't need to eb set as environnment variable. A new token must be acquired form Slack, and will represent the bot's authentication and permissions")
-        );
+    // let add_token_command = SubCommand::with_name("token")
+    //     .about("Adds a Slack API token to the config.")
+    //     .arg(Arg::with_name("token")
+    //         .required(true)
+    //         .takes_value(true)
+    //         .help("Saves the input token to config, so it doesn't need to eb set as environnment variable. A new token must be acquired form Slack, and will represent the bot's authentication and permissions")
+    //     );
 
     let add_channel_command = SubCommand::with_name("channel")
         .about("Sets the channel to where the bot will post, and adds all the channels's users in config. Only one channel is allowed per configuration file, so any previously set channel will be overwitten. The bot will join the channel if not already in.")
@@ -95,7 +94,7 @@ Currently unspecified behavior with several --day. Use only one when specificyin
     let add_command = SubCommand::with_name("add")
         .about("Adds various data to config, possibly fetching data from Slack")
         .subcommand(add_member_command)
-        .subcommand(add_token_command)
+        // .subcommand(add_token_command)
         .subcommand(add_channel_command)
         .subcommand(add_times_command);
 
@@ -141,13 +140,13 @@ Currently unspecified behavior with several --day. Use only one when specificyin
                 .takes_value(true)
                 .validator(validate_time_input)
                 .help("Register the time at which the message should be sheduled."),
-        )
-        .arg(
-            Arg::with_name("token")
-                .long("token")
-                .takes_value(true)
-                .help("Registers the token in config file instead of env var."),
         );
+    // .arg(
+    //     Arg::with_name("token")
+    //         .long("token")
+    //         .takes_value(true)
+    //         .help("Registers the token in config file instead of env var."),
+    // );
     let app = App::new(BOT_NAME)
         .version(CLI_VERSION)
         .about("Exposes command lines to control the Slack-R bot.")
@@ -180,7 +179,26 @@ Currently unspecified behavior with several --day. Use only one when specificyin
     info!("Initializing bot");
     let should_panic = matches.is_present("config") || matches.is_present("add");
     debug!("No panic? {}", should_panic);
-    let mut bot = SlackBot::new(should_panic);
+
+    let config = BotConfig::new();
+    debug!("Created config");
+
+    debug!("Looking for API token...");
+    // Force crash if the api_key env var is not set right here. This is not an accident.
+    let token: String = match (
+        std::env::var(API_KEY_ENV_NAME),
+        &config.token,
+        should_panic) {
+            // 3-way pattern matching to allow for many ways to get the token.
+            // Isn't this beautiful?
+            (Ok(var), _, _) => { debug!("Found token in {}", API_KEY_ENV_NAME); var},
+            (_, Some(var), _ ) => { debug!("Found token in config"); var.clone()},
+            (_, _,true) => { debug!("Didn't find token, but you get a free pass"); String::from("") },
+            (_, _, _) => panic!("Token was not set. You can set it with the {} environnment variable, or using the `add token` command",
+                    API_KEY_ENV_NAME)
+    };
+    let api = ProdSlackApiClient::new(token);
+    let mut bot = SlackBot::new(config, api);
     info!("Bot initialized");
 
     debug!("Dispatching");
@@ -189,7 +207,10 @@ Currently unspecified behavior with several --day. Use only one when specificyin
             debug!("Joke subcommand");
             let input_date_args = args.values_of("day").unwrap_or_default().collect();
             let scheduled_day_arg = args.value_of("post_on");
-            task::block_on(bot.joke(input_date_args, scheduled_day_arg));
+            let scheduled = task::block_on(bot.joke(input_date_args, scheduled_day_arg));
+            for joke in scheduled {
+                println!("{}", joke);
+            }
         }
         ("reroll", Some(_args)) => {
             debug!("Reroll subcommand");
@@ -210,11 +231,6 @@ Currently unspecified behavior with several --day. Use only one when specificyin
                     debug!("Add Member subcommand");
                     let email = member_args.value_of("email").unwrap();
                     task::block_on(bot.add_member_from_email(email));
-                }
-                ("token", Some(token_args)) => {
-                    debug!("Add Token subcommand");
-                    let token = token_args.value_of("token").unwrap();
-                    task::block_on(bot.add_token(token));
                 }
                 ("channel", Some(channel_args)) => {
                     debug!("Add Channel subcommand");

@@ -1,4 +1,5 @@
 use super::*;
+use async_trait::async_trait;
 
 // ** Generic Utils **
 pub enum HttpVerb {
@@ -8,6 +9,7 @@ pub enum HttpVerb {
     // DELETE
 }
 
+#[async_trait(?Send)]
 pub trait SlackEndpoint
 where
     Self: std::fmt::Debug,
@@ -32,28 +34,28 @@ where
                 ),
         }
     }
-}
 
-pub async fn call_endpoint<E: SlackEndpoint>(
-    endpoint: E,
-    request: &E::Request,
-    client: &surf::Client,
-) -> SlackApiResponse<E::Response> {
-    info!("Calling {:?}", endpoint);
-    let request = endpoint.build_request(client, request);
-    let raw = request.recv_string().await.unwrap();
-    debug!("Raw response: {}", raw);
-    let response: SlackApiResponse<E::Response> = serde_json::from_str(&raw).unwrap();
-    debug!("Serialized response: {:?}", response);
-    match &response.content {
-        SlackApiContent::Ok(_ok) => info!("Got Slack response successfully"),
-        SlackApiContent::Err(e) => error!(
-            "Slack responded with an error on the request for {}: {:?}",
-            endpoint.endpoint_url(),
-            e.error
-        ),
-    };
-    response
+    async fn call_endpoint(
+        &self,
+        request: &Self::Request,
+        client: &surf::Client,
+    ) -> SlackApiResponse<Self::Response> {
+        info!("Calling {:?}", self.endpoint_url());
+        let request = self.build_request(client, &request);
+        let raw = request.recv_string().await.unwrap();
+        debug!("Raw response: {}", raw);
+        let response: SlackApiResponse<Self::Response> = serde_json::from_str(&raw).unwrap();
+        debug!("Serialized response: {:?}", response);
+        match &response.content {
+            SlackApiContent::Ok(_ok) => info!("Got Slack response successfully"),
+            SlackApiContent::Err(e) => error!(
+                "Slack responded with an error on the request for {}: {:?}",
+                self.endpoint_url(),
+                e.error
+            ),
+        };
+        response
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
