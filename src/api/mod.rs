@@ -1,10 +1,18 @@
-use chrono::{DateTime, TimeZone, Local};
+mod client;
+mod endpoints;
+mod generic;
+use chrono::{DateTime, Local, TimeZone};
+pub(crate) use client::{ProdSlackApiClient, SlackApiClient};
+pub use endpoints::*;
+pub use generic::*;
 use log::{debug, error, info};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use surf::Client;
 
-mod generic;
-pub use generic::*;
+#[cfg(not(debug_assertions))]
+const SLACK_API_URL: &str = "https://slack.com/api/";
+#[cfg(debug_assertions)]
+const SLACK_API_URL: &str = "http://localhost:3030";
 
-mod endpoints;
-pub use endpoints::*;
+#[cfg(test)]
+pub use client::tests::TestSlackClient;

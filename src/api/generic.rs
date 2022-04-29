@@ -1,4 +1,5 @@
 use super::*;
+use async_trait::async_trait;
 
 // ** Generic Utils **
 pub enum HttpVerb {
@@ -8,7 +9,11 @@ pub enum HttpVerb {
     // DELETE
 }
 
-pub trait SlackEndpoint where Self: std::fmt::Debug {
+#[async_trait(?Send)]
+pub trait SlackEndpoint
+where
+    Self: std::fmt::Debug,
+{
     type Request: Serialize;
     type Response: Serialize + DeserializeOwned + std::fmt::Debug;
 
@@ -19,29 +24,38 @@ pub trait SlackEndpoint where Self: std::fmt::Debug {
         debug!("JSON request {}", data);
         match self.method() {
             HttpVerb::POST => client.post(self.endpoint_url()).body(data),
-            HttpVerb::GET => client.get(self.endpoint_url()).query(&data).unwrap()
-                .header(surf::http::headers::CONTENT_TYPE, format!("{}; charset=utf-8", surf::http::mime::FORM)),
+            HttpVerb::GET => client
+                .get(self.endpoint_url())
+                .query(&data)
+                .unwrap()
+                .header(
+                    surf::http::headers::CONTENT_TYPE,
+                    format!("{}; charset=utf-8", surf::http::mime::FORM),
+                ),
         }
     }
-}
 
-pub async fn call_endpoint<E: SlackEndpoint>(
-    endpoint: E,
-    request: &E::Request,
-    client: &surf::Client,
-) -> SlackApiResponse<E::Response> {
-// ) -> E::Response  {
-    info!("Calling {:?}", endpoint);
-    let request = endpoint.build_request(client, request);
-    let raw = request.recv_string().await.unwrap();
-    debug!("Raw response: {}", raw);
-    let response: SlackApiResponse<E::Response> = serde_json::from_str(&raw).unwrap();
-    debug!("Serialized response: {:?}", response);
-    match &response.content {
-        SlackApiContent::Ok(_ok) => info!("Got Slack response successfully"),
-        SlackApiContent::Err(e) => error!("Slack responded with an error on the request for {}: {:?}", endpoint.endpoint_url(), e.error),
-    };
-    response
+    async fn call_endpoint(
+        &self,
+        request: &Self::Request,
+        client: &surf::Client,
+    ) -> SlackApiResponse<Self::Response> {
+        info!("Calling {:?}", self.endpoint_url());
+        let request = self.build_request(client, &request);
+        let raw = request.recv_string().await.unwrap();
+        debug!("Raw response: {}", raw);
+        let response: SlackApiResponse<Self::Response> = serde_json::from_str(&raw).unwrap();
+        debug!("Serialized response: {:?}", response);
+        match &response.content {
+            SlackApiContent::Ok(_ok) => info!("Got Slack response successfully"),
+            SlackApiContent::Err(e) => error!(
+                "Slack responded with an error on the request for {}: {:?}",
+                self.endpoint_url(),
+                e.error
+            ),
+        };
+        response
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -51,7 +65,7 @@ pub enum SlackApiError {
     ///Invalid user id provided
     invalid_user_id,
     /// The channel passed is invalid
-    invalid_channel, 
+    invalid_channel,
     /// Value passed for channel was not found
     channel_not_found,
     /// Value passed for user was invalid.
@@ -81,7 +95,7 @@ pub enum SlackApiError {
     ///The token type used in this request is not allowed.
     not_allowed_token_type,
     /// Value passed for cursor was invalid.
-    invalid_cursor, 
+    invalid_cursor,
     /// Failed to fetch members for the conversation.
     fetch_members_failed,
     /// The method has been deprecated.
@@ -123,7 +137,7 @@ pub enum SlackApiError {
     /// Complete Slack API failure
     internal_error,
     /// Not found
-    method_not_found
+    method_not_found,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -133,7 +147,7 @@ pub enum SlackApiWarning {
     missing_charset,
     already_in_channel,
     message_truncated,
-    superfluous_charset
+    superfluous_charset,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -145,7 +159,7 @@ pub struct SlackApiErrorResponse {
 pub struct SlackApiResponse<T> {
     /// Slack took great care of putting the ok to check for success, but I don't even need it, serde can tell from the fields.
     ok: bool,
-    /// `content` is not a field that the API actually sends, but this allows to have a generic-ish struct. 
+    /// `content` is not a field that the API actually sends, but this allows to have a generic-ish struct.
     // flattened response with fields as is, will be deserialized and put together under this field.
     #[serde(flatten)]
     pub content: SlackApiContent<T>,
@@ -153,14 +167,13 @@ pub struct SlackApiResponse<T> {
     pub warning: Option<SlackApiWarning>,
     /// can have Metadata, or repeat warnings. Maybe other usages, but haven't seen yet, so aren't defined here, and won't be picked.
     /// report if any raw response sends more!
-    pub response_metadata: Option<ResponseMetadata>
-
+    pub response_metadata: Option<ResponseMetadata>,
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum SlackApiContent<T> {
     Ok(T),
-    Err(SlackApiErrorResponse)
+    Err(SlackApiErrorResponse),
 }
 
 impl<T> SlackApiResponse<T> {
@@ -168,7 +181,7 @@ impl<T> SlackApiResponse<T> {
     pub(crate) fn unwrap(self) -> T {
         match self.content {
             SlackApiContent::Ok(value) => value,
-            SlackApiContent::Err(error) => panic!("{:?}", error)
+            SlackApiContent::Err(error) => panic!("{:?}", error),
         }
     }
 }
@@ -176,5 +189,5 @@ impl<T> SlackApiResponse<T> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResponseMetadata {
     pub next_cursor: Option<String>,
-    pub warnings: Option<Vec<SlackApiWarning>>
+    pub warnings: Option<Vec<SlackApiWarning>>,
 }

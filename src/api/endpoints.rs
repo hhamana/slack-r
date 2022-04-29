@@ -2,7 +2,7 @@ use super::*;
 
 // Schedule Message
 #[derive(Debug)]
-struct ScheduleMessageEndpoint;
+pub struct ScheduleMessageEndpoint;
 impl SlackEndpoint for ScheduleMessageEndpoint {
     type Request = ScheduleMessageRequest;
     type Response = ScheduleMessageResponseRaw;
@@ -13,15 +13,6 @@ impl SlackEndpoint for ScheduleMessageEndpoint {
     fn method(&self) -> HttpVerb {
         HttpVerb::POST
     }
-}
-
-pub async fn schedule_message(
-    client: &Client,
-    schedule_message: &ScheduleMessageRequest,
-) -> ScheduleMessageResponse {
-    let response_res = call_endpoint(ScheduleMessageEndpoint, schedule_message, client).await;
-    // ScheduleMessageResponse::from(response_res)
-    ScheduleMessageResponse::from(response_res.unwrap())
 }
 
 // Schedule Message Structs
@@ -207,40 +198,8 @@ impl SlackEndpoint for ListMembersEndpoint {
     }
 }
 
-pub async fn list_members_for_channel(
-    client: &Client,
-    channel: &str,
-) -> Result<Vec<String>, SlackApiError> {
-    let mut members = Vec::new();
-    let mut request = ListMembersRequestParams {
-        channel: channel.to_string(),
-        cursor: None,
-    };
-    loop {
-        let full_response = call_endpoint(ListMembersEndpoint, &request, client).await;
-        match full_response.content {
-            SlackApiContent::Ok(response) => {
-                members.extend(response.members);
-                if let Some(metadata) = full_response.response_metadata {
-                    if let Some(next_cursor) = metadata.next_cursor {
-                        if !next_cursor.is_empty() {
-                            request.cursor = Some(next_cursor);
-                        } else {
-                            break;
-                        }
-                    } else {
-                        break;
-                    };
-                }
-            }
-            SlackApiContent::Err(err) => return Err(err.error),
-        }
-    }
-    Ok(members)
-}
-
 #[derive(Debug)]
-struct ListScheduledMessagesEndpoint;
+pub struct ListScheduledMessagesEndpoint;
 impl SlackEndpoint for ListScheduledMessagesEndpoint {
     type Request = ScheduledMessagesListRequest;
     type Response = ScheduledMessagesListRaw;
@@ -252,55 +211,12 @@ impl SlackEndpoint for ListScheduledMessagesEndpoint {
     }
 }
 
-pub async fn list_scheduled_messages(
-    client: &Client,
-    channel: &str,
-) -> Vec<ScheduledMessageObject> {
-    let mut request = ScheduledMessagesListRequest {
-        channel: Some(channel.to_string()),
-        ..ScheduledMessagesListRequest::default()
-    };
-    let mut all_responses = Vec::new();
-
-    loop {
-        let full_response = call_endpoint(ListScheduledMessagesEndpoint, &request, client).await;
-        match full_response.content {
-            SlackApiContent::Ok(response) => {
-                let page_objects_iterator = response
-                    .scheduled_messages
-                    .iter()
-                    .map(ScheduledMessageObject::from);
-                all_responses.extend(page_objects_iterator);
-                debug!("Added to total, {} items", all_responses.len());
-                if let Some(metadata) = full_response.response_metadata {
-                    if let Some(next_cursor) = metadata.next_cursor {
-                        if !next_cursor.is_empty() {
-                            request.cursor = Some(next_cursor);
-                        } else {
-                            break;
-                        }
-                    } else {
-                        break;
-                    };
-                }
-            }
-            SlackApiContent::Err(err) => {
-                error!("{:?}", err);
-                break;
-            }
-        }
-    }
-
-    debug!("Total {} scheduled message fetched", all_responses.len());
-    all_responses
-}
-
 // List Of Pending Scheduled Messages
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct ScheduledMessagesListRequest {
-    channel: Option<String>,
+    pub channel: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cursor: Option<String>,
+    pub cursor: Option<String>,
     // latest: Option<i64>,
     // limit: Option<u64>,
     // oldest: Option<i64>,
@@ -308,7 +224,7 @@ pub struct ScheduledMessagesListRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ScheduledMessagesListRaw {
-    scheduled_messages: Vec<ScheduledMessageObjectRaw>,
+    pub scheduled_messages: Vec<ScheduledMessageObjectRaw>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -355,15 +271,17 @@ impl From<&ScheduledMessageObjectRaw> for ScheduledMessageObject {
         }
     }
 }
+
 impl ScheduledMessageObject {
     pub fn date(&self) -> chrono::Date<Local> {
         self.post_at.date()
     }
 }
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListMembersRequestParams {
-    channel: String,
-    cursor: Option<String>,
+    pub channel: String,
+    pub cursor: Option<String>,
     // limit: Option<u64>
 }
 
@@ -471,6 +389,7 @@ impl DeleteScheduledMessageRequest {
         }
     }
 }
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Empty {}
 
